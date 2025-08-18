@@ -17,10 +17,10 @@ public class QuestionCategory {
         TRAVEL("여행"),
         DAILY_LIFE("일상생활");
 
-        private final String description;
+        private final String displayName;
 
-        MajorCategory(String description) {
-            this.description = description;
+        MajorCategory(String displayName) {
+            this.displayName = displayName;
         }
     }
 
@@ -30,29 +30,29 @@ public class QuestionCategory {
     @Getter
     public enum MinorCategory {
         // 학업 관련 (3개)
-        GRAMMAR("문법"),
-        VOCABULARY("어휘"),
-        READING("독해"),
+        CLASS_LISTENING("수업 듣기"),
+        DEPARTMENT_CONVERSATION("학과 대화"),
+        ASSIGNMENT_EXAM("과제/시험 준비"),
         
         // 비즈니스 관련 (3개)
-        MEETING("회의"),
-        PRESENTATION("프레젠테이션"),
-        NEGOTIATION("협상"),
+        MEETING_CONFERENCE("미팅/회의"),
+        CUSTOMER_SERVICE("고객 응대"),
+        EMAIL_REPORT("이메일/보고서"),
         
         // 여행 관련 (3개)
         BACKPACKING("배낭 여행"),
-        FRIEND_TRIP("친구 여행"),
         FAMILY_TRIP("가족 여행"),
+        FRIEND_TRIP("친구와 여행"),
         
         // 일상생활 관련 (3개)
-        SHOPPING("쇼핑"),
-        COOKING("요리"),
-        TRANSPORTATION("교통");
+        SHOPPING_DINING("쇼핑/외식"),
+        HOSPITAL_VISIT("병원 이용"),
+        PUBLIC_TRANSPORT("대중교통 이용");
 
-        private final String description;
+        private final String displayName;
 
-        MinorCategory(String description) {
-            this.description = description;
+        MinorCategory(String displayName) {
+            this.displayName = displayName;
         }
     }
 
@@ -103,13 +103,13 @@ public class QuestionCategory {
     public static MinorCategory[] getMinorCategoriesByMajor(MajorCategory majorCategory) {
         switch (majorCategory) {
             case STUDY:
-                return new MinorCategory[]{MinorCategory.GRAMMAR, MinorCategory.VOCABULARY, MinorCategory.READING};
+                return new MinorCategory[]{MinorCategory.CLASS_LISTENING, MinorCategory.DEPARTMENT_CONVERSATION, MinorCategory.ASSIGNMENT_EXAM};
             case BUSINESS:
-                return new MinorCategory[]{MinorCategory.MEETING, MinorCategory.PRESENTATION, MinorCategory.NEGOTIATION};
+                return new MinorCategory[]{MinorCategory.MEETING_CONFERENCE, MinorCategory.CUSTOMER_SERVICE, MinorCategory.EMAIL_REPORT};
             case TRAVEL:
-                return new MinorCategory[]{MinorCategory.BACKPACKING, MinorCategory.FRIEND_TRIP, MinorCategory.FAMILY_TRIP};
+                return new MinorCategory[]{MinorCategory.BACKPACKING, MinorCategory.FAMILY_TRIP, MinorCategory.FRIEND_TRIP};
             case DAILY_LIFE:
-                return new MinorCategory[]{MinorCategory.SHOPPING, MinorCategory.COOKING, MinorCategory.TRANSPORTATION};
+                return new MinorCategory[]{MinorCategory.SHOPPING_DINING, MinorCategory.HOSPITAL_VISIT, MinorCategory.PUBLIC_TRANSPORT};
             default:
                 return new MinorCategory[0];
         }
@@ -128,12 +128,26 @@ public class QuestionCategory {
     }
 
     /**
-     * 대분류별 총 문제 종류 수 계산
+     * 대분류별 총 문제 종류 수 계산 (모든 소분류 포함)
      */
     public static int getTotalQuestionTypesByMajor(MajorCategory majorCategory) {
         MinorCategory[] minorCategories = getMinorCategoriesByMajor(majorCategory);
         QuestionType[] questionTypes = QuestionType.values();
         return minorCategories.length * questionTypes.length; // 3 × 3 = 9
+    }
+
+    /**
+     * 선택된 소분류 수에 따른 문제 종류 수 계산
+     * @param majorCategory 대분류
+     * @param selectedMinorCount 선택된 소분류 수 (1~3)
+     * @return 선택된 소분류 수 × 3개 문제유형
+     */
+    public static int getTotalQuestionTypesByMajor(MajorCategory majorCategory, int selectedMinorCount) {
+        if (selectedMinorCount < 1 || selectedMinorCount > 3) {
+            throw new IllegalArgumentException("선택된 소분류 수는 1~3개여야 합니다. 현재: " + selectedMinorCount);
+        }
+        QuestionType[] questionTypes = QuestionType.values();
+        return selectedMinorCount * questionTypes.length; // 선택된 소분류 수 × 3
     }
 
     /**

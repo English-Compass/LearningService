@@ -46,6 +46,7 @@ public class LearningSessionDto {
         private Integer answeredQuestions;
         private Integer correctAnswers;       // 추가
         private Integer wrongAnswers;         // 추가
+        private Integer score;                // 점수 추가
         private Double progressPercentage;
         private LocalDateTime startedAt;      // 추가
         private LocalDateTime lastUpdatedAt;  // 추가

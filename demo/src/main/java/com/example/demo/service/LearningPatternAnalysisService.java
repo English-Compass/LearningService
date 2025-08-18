@@ -159,24 +159,77 @@ public class LearningPatternAnalysisService {
     }
 
     /**
-     * 카테고리별 성과 분석
+     * 계층적 카테고리별 성과 분석 (대분류 → 소분류)
      */
-    private Map<String, Double> calculateCategoryAccuracy(List<QuestionAnswer> answers) {
-        return answers.stream()
+    private Map<String, Object> calculateCategoryAccuracy(List<QuestionAnswer> answers) {
+        Map<String, Object> hierarchicalCategoryAccuracy = new HashMap<>();
+        
+        // 대분류별로 그룹화하고, 각 대분류 내에서 소분류별 성과 분석
+        Map<String, Map<String, Double>> categoryAccuracy = answers.stream()
             .collect(Collectors.groupingBy(
-                QuestionAnswer::getQuestionType, // 문제 유형별로 그룹화
-                Collectors.averagingInt(answer -> answer.getIsCorrect() ? 1 : 0)
+                QuestionAnswer::getMajorCategory,
+                Collectors.groupingBy(
+                    QuestionAnswer::getMinorCategory,
+                    Collectors.averagingInt(answer -> answer.getIsCorrect() ? 1 : 0)
+                )
             ));
+        
+        // 각 대분류별로 전체 성과와 소분류별 성과를 포함한 구조 생성
+        for (Map.Entry<String, Map<String, Double>> majorEntry : categoryAccuracy.entrySet()) {
+            String majorCategory = majorEntry.getKey();
+            Map<String, Double> minorCategories = majorEntry.getValue();
+            
+            // 대분류 전체 성과 계산
+            double majorCategoryOverallAccuracy = minorCategories.values().stream()
+                .mapToDouble(Double::doubleValue)
+                .average()
+                .orElse(0.0);
+            
+            // 대분류별 상세 정보 생성
+            Map<String, Object> majorCategoryInfo = new HashMap<>();
+            majorCategoryInfo.put("overallAccuracy", majorCategoryOverallAccuracy);
+            majorCategoryInfo.put("minorCategories", minorCategories);
+            majorCategoryInfo.put("isWeakArea", majorCategoryOverallAccuracy < 0.7);
+            
+            hierarchicalCategoryAccuracy.put(majorCategory, majorCategoryInfo);
+        }
+        
+        return hierarchicalCategoryAccuracy;
     }
 
     /**
-     * 취약 영역 식별 (3가지 문제 유형 기준)
+     * 계층적 취약 영역 식별 (대분류 → 소분류)
      */
-    private List<String> identifyWeakCategories(Map<String, Double> categoryAccuracy) {
-        return categoryAccuracy.entrySet().stream()
-            .filter(entry -> entry.getValue() < 0.7) // 70% 미만을 취약 영역으로 간주
-            .map(Map.Entry::getKey)
-            .collect(Collectors.toList());
+    private Map<String, Object> identifyWeakCategories(Map<String, Object> hierarchicalCategoryAccuracy) {
+        Map<String, Object> weakAreas = new HashMap<>();
+        
+        for (Map.Entry<String, Object> entry : hierarchicalCategoryAccuracy.entrySet()) {
+            String majorCategory = entry.getKey();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> majorCategoryInfo = (Map<String, Object>) entry.getValue();
+            
+            boolean isWeakArea = (Boolean) majorCategoryInfo.get("isWeakArea");
+            
+            if (isWeakArea) {
+                @SuppressWarnings("unchecked")
+                Map<String, Double> minorCategories = (Map<String, Double>) majorCategoryInfo.get("minorCategories");
+                
+                // 소분류별 취약 영역 식별
+                List<String> weakMinorCategories = minorCategories.entrySet().stream()
+                    .filter(minorEntry -> minorEntry.getValue() < 0.7)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toList());
+                
+                Map<String, Object> weakAreaInfo = new HashMap<>();
+                weakAreaInfo.put("overallAccuracy", majorCategoryInfo.get("overallAccuracy"));
+                weakAreaInfo.put("weakMinorCategories", weakMinorCategories);
+                weakAreaInfo.put("allMinorCategories", minorCategories);
+                
+                weakAreas.put(majorCategory, weakAreaInfo);
+            }
+        }
+        
+        return weakAreas;
     }
 
     /**
@@ -376,13 +429,14 @@ public class LearningPatternAnalysisService {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class QuestionTypePerformance {
-        private String questionType;
-        private int totalQuestions;
-        private int correctAnswers;
-        private double accuracy;
-        private boolean isWeakArea;
-        private double averageTime;
-        private int difficulty;
+        private String questionType; // 문제 유형
+        private int totalQuestions; // 총 문제 수
+        private int correctAnswers; // 정답 수
+        private double accuracy; // 정답률
+        private boolean isWeakArea; // 취약 영역 여부
+        private double averageTime; // 평균 시간
+        private int difficulty; // 난이도
+        
     }
 
     @Data
@@ -390,15 +444,13 @@ public class LearningPatternAnalysisService {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class LearningProgressAnalysis {
-        private String sessionId;
-        private String userId;
-        private String learningItemId;
-        private String questionId;
-        private Boolean isCorrect;
-        private Integer timeSpent;
-        private String userNotes;
-        private Integer currentQuestionNumber;
-        private Integer totalQuestions;
+        private String sessionId; // 세션 ID
+        private String userId; // 사용자 ID
+        private String questionId; // 문제 ID
+        private Boolean isCorrect; // 정답 여부
+        private Integer timeSpent; // 걸린 시간
+        private Integer currentQuestionNumber; // 현재 문제 번호
+        private Integer totalQuestions; // 총 문제 수
         private Integer answeredQuestions;
         private Integer correctAnswers;
         private Integer wrongAnswers;

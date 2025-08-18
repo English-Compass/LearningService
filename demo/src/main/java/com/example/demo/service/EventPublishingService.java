@@ -1,80 +1,64 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.LearningCompletedEvent;
-import com.example.demo.dto.LearningSessionCompletedEvent;
+import com.example.demo.entity.LearningSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 이벤트 발행 서비스
- * 학습 완료 이벤트만 발행하여 다른 시스템에 알림
+ * 학습 세션 완료 시에만 이벤트를 발행하여 다른 시스템에 알림
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
+@RequiredArgsConstructor
 public class EventPublishingService {
 
-    private final RedisCacheService redisCacheService;
-
-    // TODO: 실제 구현 시 Kafka, RabbitMQ 등의 메시지 큐 사용
-    // private final KafkaTemplate<String, Object> kafkaTemplate;
-    // private final RabbitTemplate rabbitTemplate;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    
+    @Value("${kafka.topic.session-completed:learning-session-completed-events}")
+    private String sessionCompletedTopic;
 
     /**
-     * 학습 완료 이벤트 생성 및 발행
+     * 학습 세션 완료 이벤트 발행
      */
-    public void publishLearningCompletedEvent(LearningSessionCompletedEvent completedEvent) {
+    public void publishLearningSessionCompletedEvent(LearningSession completedSession) {
         try {
-            // 1. 완료 이벤트 정보를 기반으로 이벤트 생성
-            LearningCompletedEvent event = LearningCompletedEvent.builder()
-                .sessionId(completedEvent.getSessionId())
-                .userId(completedEvent.getUserId())
-                .learningItemId(completedEvent.getLearningItemId())
-                .totalQuestions(completedEvent.getTotalQuestions())
-                .answeredQuestions(completedEvent.getAnsweredQuestions())
-                .correctAnswers(completedEvent.getCorrectAnswers())
-                .wrongAnswers(completedEvent.getWrongAnswers())
-                .score(completedEvent.getScore())
-                .startedAt(completedEvent.getStartedAt())
-                .completedAt(completedEvent.getCompletedAt())
-                .build();
-
-            // 2. 이벤트 발행
-            publishLearningCompletedEvent(event);
+            // 세션 완료 이벤트를 Kafka로 발행
+            publishToKafka(sessionCompletedTopic, completedSession.getSessionId(), completedSession);
+            
+            log.info("학습 세션 완료 이벤트 발행 완료: sessionId={}, userId={}, score={}, totalQuestions={}", 
+                completedSession.getSessionId(), completedSession.getUserId(), completedSession.getScore(), completedSession.getTotalQuestions());
             
         } catch (Exception e) {
-            log.error("학습 완료 이벤트 생성 및 발행 실패: sessionId={}", completedEvent.getSessionId(), e);
+            log.error("학습 세션 완료 이벤트 발행 실패: sessionId={}", completedSession.getSessionId(), e);
         }
     }
 
     /**
-     * 학습 완료 이벤트 발행
-     * 전체 학습 결과 분석 및 오답/복습 문제 제공을 위한 데이터 수집
+     * Kafka로 이벤트 발행
      */
-    public void publishLearningCompletedEvent(LearningCompletedEvent event) {
+    private void publishToKafka(String topic, String key, Object event) {
         try {
-            // 이벤트 ID 생성
-            event.setEventId(UUID.randomUUID().toString());
-            event.setTimestamp(LocalDateTime.now());
+            CompletableFuture<SendResult<String, Object>> future = kafkaTemplate.send(topic, key, event);
             
-            // 이벤트를 캐시에 저장 (이벤트 조회용)
-            redisCacheService.cacheEvent("learning-completed", event.getEventId(), event);
-            
-            // TODO: Kafka 토픽으로 이벤트 발행
-            // kafkaTemplate.send("learning-completed", event.getUserId(), event);
-            
-            // TODO: RabbitMQ로 이벤트 발행
-            // rabbitTemplate.convertAndSend("learning.exchange", "learning.completed", event);
-            
-            log.info("학습 완료 이벤트 발행 완료: eventId={}, sessionId={}, userId={}, score={}, totalQuestions={}", 
-                event.getEventId(), event.getSessionId(), event.getUserId(), event.getScore(), event.getTotalQuestions());
+            future.whenComplete((result, ex) -> {
+                if (ex == null) {
+                    log.debug("이벤트 발행 성공: topic={}, key={}, partition={}, offset={}", 
+                        topic, key, result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
+                } else {
+                    log.error("이벤트 발행 실패: topic={}, key={}", topic, key, ex);
+                }
+            });
             
         } catch (Exception e) {
-            log.error("학습 완료 이벤트 발행 실패: sessionId={}", event.getSessionId(), e);
+            log.error("Kafka 이벤트 발행 중 오류 발생: topic={}, key={}", topic, key, e);
+            throw new RuntimeException("이벤트 발행 실패", e);
         }
     }
 
@@ -82,7 +66,12 @@ public class EventPublishingService {
      * 이벤트 발행 상태 확인
      */
     public boolean isEventPublishingAvailable() {
-        // TODO: 실제 구현 시 메시지 큐 연결 상태 확인
-        return true; // 임시로 항상 true 반환
+        try {
+            // Kafka 연결 상태 확인 (간단한 health check)
+            return kafkaTemplate.getDefaultTopic() != null;
+        } catch (Exception e) {
+            log.warn("Kafka 연결 상태 확인 실패", e);
+            return false;
+        }
     }
 }

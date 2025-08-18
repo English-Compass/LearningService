@@ -1,8 +1,6 @@
 package com.example.demo.controller;
 
-import com.example.demo.dto.LearningSessionStartedEvent;
-import com.example.demo.dto.LearningSessionCompletedEvent;
-import com.example.demo.entity.LearningSession;
+import com.example.demo.dto.LearningSessionDto;
 import com.example.demo.service.LearningSessionService;
 import com.example.demo.service.LearningServiceOrchestrator;
 import lombok.RequiredArgsConstructor;
@@ -30,13 +28,13 @@ public class LearningSessionController {
      * POST /api/learning-sessions/start
      */
     @PostMapping("/start")
-    public ResponseEntity<LearningSession> startLearningSession(
+    public ResponseEntity<LearningSessionDto.SessionResponse> startLearningSession(
             @RequestBody StartSessionRequest request) {
         
         log.info("학습 세션 시작 요청: userId={}, sessionType={}, totalQuestions={}", 
             request.getUserId(), request.getSessionType(), request.getTotalQuestions());
         
-        LearningSession session = learningServiceOrchestrator.startPersonalizedLearningSession(
+        LearningSessionDto.SessionResponse session = learningServiceOrchestrator.startPersonalizedLearningSession(
             request.getUserId(),
             request.getSessionType(),
             request.getTotalQuestions()
@@ -51,10 +49,10 @@ public class LearningSessionController {
      * GET /api/learning-sessions/{sessionId}
      */
     @GetMapping("/{sessionId}")
-    public ResponseEntity<LearningSession> getLearningSession(@PathVariable String sessionId) {
+    public ResponseEntity<LearningSessionDto.SessionResponse> getLearningSession(@PathVariable String sessionId) {
         log.info("학습 세션 조회: sessionId={}", sessionId);
         
-        LearningSession session = learningServiceOrchestrator.getLearningSession(sessionId);
+        LearningSessionDto.SessionResponse session = learningServiceOrchestrator.getLearningSession(sessionId);
         return ResponseEntity.ok(session);
     }
 
@@ -63,7 +61,7 @@ public class LearningSessionController {
      * GET /api/learning-sessions/users/{userId}
      */
     @GetMapping("/users/{userId}")
-    public ResponseEntity<List<LearningSession>> getUserLearningSessions(
+    public ResponseEntity<List<LearningSessionDto.SessionListResponse>> getUserLearningSessions(
             @PathVariable String userId,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Integer limit) {
@@ -71,7 +69,7 @@ public class LearningSessionController {
         log.info("사용자 학습 세션 목록 조회: userId={}, status={}, limit={}", 
             userId, status, limit);
         
-        List<LearningSession> sessions = learningServiceOrchestrator.getUserLearningSessions(
+        List<LearningSessionDto.SessionListResponse> sessions = learningServiceOrchestrator.getUserLearningSessions(
             userId, status, limit);
         
         return ResponseEntity.ok(sessions);
@@ -115,12 +113,12 @@ public class LearningSessionController {
      * POST /api/learning-sessions/{sessionId}/complete
      */
     @PostMapping("/{sessionId}/complete")
-    public ResponseEntity<LearningSessionCompletedEvent> completeLearningSession(
+    public ResponseEntity<LearningSessionDto.SessionResponse> completeLearningSession(
             @PathVariable String sessionId) {
         
         log.info("학습 세션 완료: sessionId={}", sessionId);
         
-        LearningSessionCompletedEvent event = learningServiceOrchestrator.completeLearningSession(sessionId);
+        LearningSessionDto.SessionResponse event = learningServiceOrchestrator.completeLearningSession(sessionId);
         return ResponseEntity.ok(event);
     }
 
@@ -129,10 +127,10 @@ public class LearningSessionController {
      * POST /api/learning-sessions/{sessionId}/abandon
      */
     @PostMapping("/{sessionId}/abandon")
-    public ResponseEntity<LearningSession> abandonLearningSession(@PathVariable String sessionId) {
+    public ResponseEntity<LearningSessionDto.SessionResponse> abandonLearningSession(@PathVariable String sessionId) {
         log.info("학습 세션 중단: sessionId={}", sessionId);
         
-        LearningSession session = learningServiceOrchestrator.abandonLearningSession(sessionId);
+        LearningSessionDto.SessionResponse session = learningServiceOrchestrator.abandonLearningSession(sessionId);
         return ResponseEntity.ok(session);
     }
 
@@ -153,10 +151,10 @@ public class LearningSessionController {
      * POST /api/learning-sessions/{sessionId}/resume
      */
     @PostMapping("/{sessionId}/resume")
-    public ResponseEntity<LearningSession> resumeLearningSession(@PathVariable String sessionId) {
+    public ResponseEntity<LearningSessionDto.SessionResponse> resumeLearningSession(@PathVariable String sessionId) {
         log.info("학습 세션 재개: sessionId={}", sessionId);
         
-        LearningSession session = learningServiceOrchestrator.resumeLearningSession(sessionId);
+        LearningSessionDto.SessionResponse session = learningServiceOrchestrator.resumeLearningSession(sessionId);
         return ResponseEntity.ok(session);
     }
 
@@ -165,10 +163,10 @@ public class LearningSessionController {
      * POST /api/learning-sessions/{sessionId}/pause
      */
     @PostMapping("/{sessionId}/pause")
-    public ResponseEntity<LearningSession> pauseLearningSession(@PathVariable String sessionId) {
+    public ResponseEntity<LearningSessionDto.SessionResponse> pauseLearningSession(@PathVariable String sessionId) {
         log.info("학습 세션 일시정지: sessionId={}", sessionId);
         
-        LearningSession session = learningServiceOrchestrator.pauseLearningSession(sessionId);
+        LearningSessionDto.SessionResponse session = learningServiceOrchestrator.pauseLearningSession(sessionId);
         return ResponseEntity.ok(session);
     }
 
@@ -177,10 +175,10 @@ public class LearningSessionController {
      * GET /api/learning-sessions/users/{userId}/current
      */
     @GetMapping("/users/{userId}/current")
-    public ResponseEntity<LearningSession> getCurrentSession(@PathVariable String userId) {
+    public ResponseEntity<LearningSessionDto.SessionResponse> getCurrentSession(@PathVariable String userId) {
         log.info("현재 진행 중인 세션 조회: userId={}", userId);
         
-        LearningSession session = learningServiceOrchestrator.getCurrentSession(userId);
+        LearningSessionDto.SessionResponse session = learningServiceOrchestrator.getCurrentSession(userId);
         return ResponseEntity.ok(session);
     }
 

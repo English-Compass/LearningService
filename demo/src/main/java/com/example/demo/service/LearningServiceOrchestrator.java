@@ -1,6 +1,7 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.LearningSessionCompletedEvent;
+
+import com.example.demo.dto.LearningSessionDto;
 import com.example.demo.entity.LearningSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +26,7 @@ public class LearningServiceOrchestrator {
     /**
      * 개인화된 학습 세션 시작
      */
-    public LearningSession startPersonalizedLearningSession(String userId, String sessionType, 
+    public LearningSessionDto.SessionResponse startPersonalizedLearningSession(String userId, String sessionType, 
                                                          int totalQuestions) {
         log.info("개인화된 학습 세션 시작: userId={}, sessionType={}, totalQuestions={}", 
             userId, sessionType, totalQuestions);
@@ -38,7 +39,7 @@ public class LearningServiceOrchestrator {
             assignment.getSelectedQuestionTypes(), assignment.getQuestionsPerType());
         
         // 2. 학습 세션 생성 (할당된 문제 정보 포함)
-        LearningSession session = learningSessionService.startLearningSession(
+        LearningSessionDto.SessionResponse session = learningSessionService.startLearningSession(
             userId, sessionType, assignment);
         
         log.info("개인화된 학습 세션 시작 완료: sessionId={}, userId={}, assignedQuestions={}", 
@@ -64,23 +65,24 @@ public class LearningServiceOrchestrator {
     /**
      * 학습 세션 완료 및 이벤트 발행
      */
-    public LearningSessionCompletedEvent completeLearningSession(String sessionId) {
+    public LearningSessionDto.SessionResponse completeLearningSession(String sessionId) {
         log.info("학습 세션 완료 오케스트레이션: sessionId={}", sessionId);
         
         // 1. 학습 세션 완료 처리
-        LearningSessionCompletedEvent completedEvent = learningSessionService.completeLearningSession(sessionId);
+        LearningSessionDto.SessionResponse completedSession = learningSessionService.completeLearningSession(sessionId);
         
-        // 2. 학습 완료 이벤트 발행 (LearningPatternAnalysisService가 이벤트를 소비하여 분석)
-        eventPublishingService.publishLearningCompletedEvent(completedEvent);
+        // 2. 학습 세션 완료 이벤트 발행 (엔티티 조회 후 이벤트 발행)
+        LearningSession session = learningSessionService.getLearningSessionEntity(sessionId);
+        eventPublishingService.publishLearningSessionCompletedEvent(session);
         
-        log.info("학습 세션 완료 처리 완료: sessionId={}, score={}", sessionId, completedEvent.getScore());
-        return completedEvent;
+        log.info("학습 세션 완료 처리 완료: sessionId={}, score={}", sessionId, completedSession.getScore());
+        return completedSession;
     }
 
     /**
      * 학습 세션 조회
      */
-    public LearningSession getLearningSession(String sessionId) {
+    public LearningSessionDto.SessionResponse getLearningSession(String sessionId) {
         return learningSessionService.getLearningSession(sessionId);
     }
 
@@ -94,35 +96,35 @@ public class LearningServiceOrchestrator {
     /**
      * 현재 진행 중인 세션 조회
      */
-    public LearningSession getCurrentSession(String userId) {
+    public LearningSessionDto.SessionResponse getCurrentSession(String userId) {
         return learningSessionService.getCurrentSession(userId);
     }
 
     /**
      * 학습 세션 재개
      */
-    public LearningSession resumeLearningSession(String sessionId) {
+    public LearningSessionDto.SessionResponse resumeLearningSession(String sessionId) {
         return learningSessionService.resumeLearningSession(sessionId);
     }
 
     /**
      * 학습 세션 일시정지
      */
-    public LearningSession pauseLearningSession(String sessionId) {
+    public LearningSessionDto.SessionResponse pauseLearningSession(String sessionId) {
         return learningSessionService.pauseLearningSession(sessionId);
     }
 
     /**
      * 학습 세션 중단
      */
-    public LearningSession abandonLearningSession(String sessionId) {
+    public LearningSessionDto.SessionResponse abandonLearningSession(String sessionId) {
         return learningSessionService.abandonLearningSession(sessionId);
     }
 
     /**
      * 사용자 학습 세션 목록 조회
      */
-    public List<LearningSession> getUserLearningSessions(String userId, String status, Integer limit) {
+    public List<LearningSessionDto.SessionListResponse> getUserLearningSessions(String userId, String status, Integer limit) {
         return learningSessionService.getUserLearningSessions(userId, status, limit);
     }
 }

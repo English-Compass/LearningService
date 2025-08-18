@@ -1,6 +1,7 @@
 package com.example.demo.service;
 
-import com.example.demo.entity.UserProfile;
+import com.example.demo.dto.user.UserProfileInfo;
+import com.example.demo.client.UserServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,8 @@ import lombok.AllArgsConstructor;
 @Slf4j
 public class PersonalizedQuestionAssignmentService {
 
+    private final UserServiceClient userServiceClient;
+
     /**
      * 사용자별 개인화된 문제 할당
      * 한 세션에 3개 유형의 문제를 랜덤으로 할당
@@ -31,7 +34,7 @@ public class PersonalizedQuestionAssignmentService {
                 userId, sessionType, totalQuestions);
 
             // 1. 사용자 프로필 조회
-            UserProfile userProfile = getUserProfile(userId);
+            UserProfileInfo userProfile = getUserProfile(userId);
             
             // 2. 사용자 맞춤형 문제 유형 결정
             List<String> selectedQuestionTypes = selectQuestionTypes(userProfile, 3);
@@ -50,6 +53,7 @@ public class PersonalizedQuestionAssignmentService {
                 .assignedQuestionIds(assignedQuestionIds)
                 .personalizationFactors(extractPersonalizationFactors(userProfile))
                 .questionTypeDetails(getQuestionTypeInfo()) // 문제 유형별 상세 정보 추가
+                .totalQuestions(totalQuestions) // 총 문제 수 설정
                 .build();
 
             log.info("개인화된 문제 할당 완료: userId={}, types={}, totalAssigned={}", 
@@ -66,24 +70,14 @@ public class PersonalizedQuestionAssignmentService {
     /**
      * 사용자 프로필 조회
      */
-    private UserProfile getUserProfile(String userId) {
-        // TODO: UserProfileRepository에서 사용자 프로필 조회
-        // 임시로 기본 프로필 반환
-        return UserProfile.builder()
-            .userId(userId)
-            .learningPurpose(UserProfile.LearningPurpose.BUSINESS_LANGUAGE)
-            .businessDomain("IT")
-            .languageGoal("비즈니스 영어")
-            .interests(List.of("프로그래밍", "AI", "데이터 분석"))
-            .difficultyPreference(UserProfile.DifficultyLevel.INTERMEDIATE)
-            .learningStyle(UserProfile.LearningStyle.MIXED)
-            .build();
+    private UserProfileInfo getUserProfile(String userId) {
+        return userServiceClient.getUserProfile(userId);
     }
 
     /**
      * 사용자 맞춤형 문제 유형 선택 (3개)
      */
-    private List<String> selectQuestionTypes(UserProfile userProfile, int typeCount) {
+    private List<String> selectQuestionTypes(UserProfileInfo userProfile, int typeCount) {
         // 3가지 고정된 문제 유형
         List<String> availableTypes = List.of(
             "FILL_IN_THE_BLANK",      // 빈칸 채우기
@@ -103,7 +97,7 @@ public class PersonalizedQuestionAssignmentService {
     /**
      * 사용 가능한 문제 유형 목록
      */
-    private List<String> getAvailableQuestionTypes(UserProfile userProfile) {
+    private List<String> getAvailableQuestionTypes(UserProfileInfo userProfile) {
         // 3가지 고정된 문제 유형
         return List.of(
             "FILL_IN_THE_BLANK",      // 빈칸 채우기
@@ -115,7 +109,7 @@ public class PersonalizedQuestionAssignmentService {
     /**
      * 문제 유형 우선순위 결정
      */
-    private List<String> prioritizeQuestionTypes(List<String> availableTypes, UserProfile userProfile) {
+    private List<String> prioritizeQuestionTypes(List<String> availableTypes, UserProfileInfo userProfile) {
         // 사용자 관심사와 비즈니스 도메인에 따른 우선순위 계산
         Map<String, Integer> typeScores = new HashMap<>();
         
@@ -134,7 +128,7 @@ public class PersonalizedQuestionAssignmentService {
     /**
      * 문제 유형별 점수 계산
      */
-    private int calculateTypeScore(String questionType, UserProfile userProfile) {
+    private int calculateTypeScore(String questionType, UserProfileInfo userProfile) {
         int score = 0;
 
         // 문제 유형별 기본 점수 (난이도 기반)
@@ -150,17 +144,8 @@ public class PersonalizedQuestionAssignmentService {
                 break;
         }
 
-        // 학습 스타일 매칭 (문제 유형과 학습 스타일의 자연스러운 연결)
-        if (userProfile.getLearningStyle() == UserProfile.LearningStyle.AUDITORY && 
-            questionType.equals("PRONUNCIATION_RECOGNITION")) {
-            score += 2; // 청각적 학습자는 발음 인식에 유리
-        } else if (userProfile.getLearningStyle() == UserProfile.LearningStyle.VISUAL && 
-                   questionType.equals("FILL_IN_THE_BLANK")) {
-            score += 2; // 시각적 학습자는 빈칸 채우기에 유리
-        } else if (userProfile.getLearningStyle() == UserProfile.LearningStyle.READING && 
-                   questionType.equals("SYNONYM_SELECTION")) {
-            score += 2; // 읽기 중심 학습자는 동의어 선택에 유리
-        }
+        // 학습 스타일은 대시보드 표시용이므로 문제 할당 점수 계산에서 제외
+        // 문제 할당은 사용자 관심사와 난이도 선호도만 고려
 
         return score;
     }
@@ -198,7 +183,7 @@ public class PersonalizedQuestionAssignmentService {
     /**
      * 유형별로 문제 할당
      */
-    private List<String> assignQuestionsByType(UserProfile userProfile, Map<String, Integer> questionsPerType) {
+    private List<String> assignQuestionsByType(UserProfileInfo userProfile, Map<String, Integer> questionsPerType) {
         List<String> assignedQuestionIds = new ArrayList<>();
 
         for (Map.Entry<String, Integer> entry : questionsPerType.entrySet()) {
@@ -219,7 +204,7 @@ public class PersonalizedQuestionAssignmentService {
     /**
      * 특정 유형의 문제 조회
      */
-    private List<String> getQuestionsByType(String questionType, int count, UserProfile userProfile) {
+    private List<String> getQuestionsByType(String questionType, int count, UserProfileInfo userProfile) {
         // TODO: 실제 구현 시 QuestionRepository 사용
         // 임시로 가상의 문제 ID 생성
         List<String> questionIds = new ArrayList<>();
@@ -232,11 +217,11 @@ public class PersonalizedQuestionAssignmentService {
     /**
      * 개인화 요소 추출
      */
-    private Map<String, Object> extractPersonalizationFactors(UserProfile userProfile) {
+    private Map<String, Object> extractPersonalizationFactors(UserProfileInfo userProfile) {
         Map<String, Object> factors = new HashMap<>();
         factors.put("learningPurpose", userProfile.getLearningPurpose());
-        factors.put("businessDomain", userProfile.getBusinessDomain());
-        factors.put("languageGoal", userProfile.getLanguageGoal());
+        factors.put("businessDomain", "IT"); // 더미 데이터
+        factors.put("languageGoal", "비즈니스 영어"); // 더미 데이터
         factors.put("difficultyPreference", userProfile.getDifficultyPreference());
         factors.put("learningStyle", userProfile.getLearningStyle());
         return factors;
@@ -252,7 +237,6 @@ public class PersonalizedQuestionAssignmentService {
             .typeName("빈칸 채우기")
             .description("문장에 빈칸을 뚫어서 들어갈 올바른 단어/구문을 선택하는 문제")
             .example("나는 ___ 학교에 다닙니다. (보기: a, an, the, -)")
-            .difficulty("BEGINNER")
             .estimatedTime(30) // 초
             .build());
             
@@ -260,7 +244,6 @@ public class PersonalizedQuestionAssignmentService {
             .typeName("동의어/유사 표현 선택")
             .description("주어진 문장과 같은 의미인 문장을 보기에서 고르는 문제")
             .example("I am very tired. (밑줄: very tired) → exhausted")
-            .difficulty("INTERMEDIATE")
             .estimatedTime(45) // 초
             .build());
             
@@ -268,7 +251,6 @@ public class PersonalizedQuestionAssignmentService {
             .typeName("발음 인식 및 텍스트 변환")
             .description("문장을 읽고 발음하여 음성 인식으로 텍스트 변환 후 정답 확인")
             .example("I love studying English. → 발음 → 음성 인식 → 텍스트 비교")
-            .difficulty("ADVANCED")
             .estimatedTime(60) // 초
             .build());
             
@@ -285,8 +267,9 @@ public class PersonalizedQuestionAssignmentService {
         private String typeName;        // 유형 이름 (한글)
         private String description;     // 유형 설명
         private String example;         // 예시 문제
-        private String difficulty;      // 난이도
         private Integer estimatedTime;  // 예상 소요 시간 (초)
+        // TODO: 문제 난이도는 추후 다른 서비스에서 REST API로 조회
+        // private String difficulty;      // 난이도 (EASY, MEDIUM, HARD)
     }
 
     @Data
@@ -301,5 +284,6 @@ public class PersonalizedQuestionAssignmentService {
         private List<String> assignedQuestionIds; // 할당된 문제 ID 목록
         private Map<String, Object> personalizationFactors; // 개인화 요소들
         private Map<String, QuestionTypeInfo> questionTypeDetails; // 문제 유형별 상세 정보
+        private int totalQuestions; // 총 문제 수
     }
 }

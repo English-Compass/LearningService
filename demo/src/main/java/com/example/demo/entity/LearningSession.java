@@ -22,9 +22,6 @@ public class LearningSession {
     private String userId;
 
     @Column(nullable = false)
-    private String learningItemId; // 학습 항목 ID
-
-    @Column(nullable = false)
     private LocalDateTime startedAt;
 
     @Column
@@ -95,7 +92,7 @@ public class LearningSession {
         public String getDisplayName() {
             return displayName;
         }
-        
+
         public String getDescription() {
             return description;
         }
