@@ -70,6 +70,10 @@ public class QuestionCategory {
         QuestionType(String description) {
             this.description = description;
         }
+        
+        public String getDisplayName() {
+            return this.description;
+        }
     }
 
     /**
