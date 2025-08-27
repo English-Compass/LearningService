@@ -371,85 +371,59 @@ public class LearningAnalyticsService {
         LocalDateTime startDateTime = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.now().minusMonths(1);
         LocalDateTime endDateTime = toDate != null ? toDate.atTime(23, 59, 59) : LocalDateTime.now();
         
-        // Repository에서 문제 유형별 집계된 통계 데이터 조회
-        // QuestionAnswer에는 userId가 없으므로 sessionId를 통해 조회
-        List<QuestionTypePerformance> performances = new ArrayList<>();
-        List<LearningSession> sessions = learningSessionRepository.findByUserIdAndStartedAtBetweenOrderByCreatedAtDesc(
-            userId, startDateTime, endDateTime);
-        
-        // 문제 유형별로 통계 수집
-        Map<String, List<QuestionAnswer>> answersByType = new HashMap<>();
-        for (LearningSession session : sessions) {
-            List<QuestionAnswer> sessionAnswers = questionAnswerRepository.findBySessionIdOrderByAnsweredAtAsc(session.getSessionId());
-            for (QuestionAnswer answer : sessionAnswers) {
-                // Question과 JOIN하여 문제 유형 정보 가져오기
-                // TODO: Question 엔티티 조회 로직 필요
-                String questionType = "UNKNOWN"; // 임시값
-                answersByType.computeIfAbsent(questionType, k -> new ArrayList<>()).add(answer);
+        try {
+            // Repository에서 문제 유형별 집계된 통계 데이터 조회 (Question과 JOIN)
+            List<Object[]> questionTypeStats = questionAnswerRepository.getQuestionTypeStatsByUserIdAndDateRange(
+                userId, startDateTime, endDateTime);
+            
+            if (questionTypeStats.isEmpty()) {
+                log.warn("문제 유형별 통계 데이터가 없음: userId={}", userId);
+                return new ArrayList<>();
             }
-        }
-        
-        // 통계 계산
-        for (Map.Entry<String, List<QuestionAnswer>> entry : answersByType.entrySet()) {
-            String questionType = entry.getKey();
-            List<QuestionAnswer> typeAnswers = entry.getValue();
             
-            int totalQuestions = typeAnswers.size();
-            int correctAnswers = (int) typeAnswers.stream().filter(QuestionAnswer::getIsCorrect).count();
-            double accuracyRate = totalQuestions > 0 ? (double) correctAnswers / totalQuestions * 100 : 0.0;
-            double averageTimeSpent = typeAnswers.stream()
-                .filter(answer -> answer.getTimeSpent() != null)
-                .mapToInt(QuestionAnswer::getTimeSpent)
-                .average()
-                .orElse(0.0);
+            // 전체 답변 수 계산
+            int totalAnswers = questionTypeStats.stream()
+                .mapToInt(stats -> ((Number) stats[1]).intValue()) // totalQuestions
+                .sum();
             
-            QuestionTypePerformance performance = QuestionTypePerformance.builder()
-                .questionType(questionType)
-                .totalQuestions(totalQuestions)
-                .correctAnswers(correctAnswers)
-                .accuracyRate(accuracyRate)
-                .averageTimeSpent(averageTimeSpent)
-                .build();
+            List<QuestionTypeChartData> chartData = new ArrayList<>();
             
-            performances.add(performance);
-        }
-        
-        if (performances.isEmpty()) {
+            for (Object[] stats : questionTypeStats) {
+                String questionType = (String) stats[0];           // questionType
+                int totalQuestions = ((Number) stats[1]).intValue(); // totalQuestions
+                int correctAnswers = ((Number) stats[2]).intValue(); // correctAnswers
+                int wrongAnswers = ((Number) stats[3]).intValue();   // wrongAnswers
+                
+                // 통계 계산
+                double accuracyRate = totalQuestions > 0 ? (double) correctAnswers / totalQuestions * 100 : 0.0;
+                double percentage = totalAnswers > 0 ? (double) totalQuestions / totalAnswers * 100 : 0.0;
+                double score = correctAnswers * 5.0;
+                
+                QuestionTypeChartData data = QuestionTypeChartData.builder()
+                    .questionType(questionType)                              // 문제 유형 코드 (FILL_IN_THE_BLANK 등)
+                    .displayName(getQuestionTypeDisplayName(questionType))   // 사용자에게 표시될 한글명 ("빈칸 채우기" 등)
+                    .totalQuestions(totalQuestions)                          // 해당 유형의 총 문제 수
+                    .correctAnswers(correctAnswers)                          // 해당 유형의 정답 수
+                    .wrongAnswers(wrongAnswers)                              // 해당 유형의 오답 수
+                    .accuracyRate(Math.round(accuracyRate * 100.0) / 100.0) // 해당 유형의 정답률 (%)
+                    .percentage(Math.round(percentage * 100.0) / 100.0)     // 전체 문제 중 해당 유형이 차지하는 비율 (%)
+                    .score(score)                                           // 해당 유형에서 획득한 점수 (정답 수 × 5점)
+                    .performanceLevel(determinePerformanceLevel(accuracyRate)) // 성과 레벨 (EXCELLENT, GOOD, AVERAGE, POOR)
+                    .build();
+                
+                chartData.add(data);
+            }
+            
+            // 정답률 내림차순 정렬 (성과가 좋은 유형부터 표시)
+            chartData.sort((a, b) -> Double.compare(b.getAccuracyRate(), a.getAccuracyRate()));
+            
+            log.info("문제 유형별 성과 차트 데이터 조회 성공: userId={}, count={}", userId, chartData.size());
+            return chartData;
+            
+        } catch (Exception e) {
+            log.error("문제 유형별 성과 차트 데이터 조회 실패: userId={}", userId, e);
             return new ArrayList<>();
         }
-        
-        // 전체 답변 수 계산 (통계 데이터의 합계)
-        int totalAnswers = performances.stream()
-            .mapToInt(QuestionTypePerformance::getTotalQuestions)
-            .sum();
-        
-        List<QuestionTypeChartData> chartData = new ArrayList<>();
-        
-        for (QuestionTypePerformance performance : performances) {
-            // 통계 계산
-            int wrongAnswers = performance.getTotalQuestions() - performance.getCorrectAnswers();
-            double accuracyRate = performance.getAccuracyRate();
-            double percentage = totalAnswers > 0 ? (double) performance.getTotalQuestions() / totalAnswers * 100 : 0.0;
-            double score = performance.getCorrectAnswers() * 5.0;
-            
-            QuestionTypeChartData data = QuestionTypeChartData.builder()
-                .questionType(performance.getQuestionType())              // 문제 유형 코드 (FILL_IN_THE_BLANK 등)
-                .displayName(getQuestionTypeDisplayName(performance.getQuestionType())) // 사용자에게 표시될 한글명 ("빈칸 채우기" 등)
-                .totalQuestions(performance.getTotalQuestions())          // 해당 유형의 총 문제 수
-                .correctAnswers(performance.getCorrectAnswers())          // 해당 유형의 정답 수
-                .wrongAnswers(wrongAnswers)                              // 해당 유형의 오답 수
-                .accuracyRate(accuracyRate)                             // 해당 유형의 정답률 (%)
-                .percentage(percentage)                                 // 전체 문제 중 해당 유형이 차지하는 비율 (%)
-                .score(score)                                           // 해당 유형에서 획득한 점수 (정답 수 × 5점)
-                .performanceLevel(determinePerformanceLevel(accuracyRate)) // 성과 레벨 (EXCELLENT, GOOD, AVERAGE, POOR)
-                .build();
-            
-            chartData.add(data);
-        }
-        
-        // 정답률 내림차순 정렬 (성과가 좋은 유형부터 표시)
-        chartData.sort((a, b) -> Double.compare(b.getAccuracyRate(), a.getAccuracyRate()));
-        return chartData;
     }
 
     /**
@@ -578,5 +552,230 @@ public class LearningAnalyticsService {
         if (accuracyRate >= 80.0) return "GOOD";           // 좋음 (80-89%)
         if (accuracyRate >= 70.0) return "AVERAGE";        // 보통 (70-79%)
         return "POOR";                                      // 부족 (70% 미만)
+    }
+
+    /**
+     * 특정 사용자의 모든 학습 세션에 대한 총 학습 시간 조회
+     * QuestionAnswer의 timeSpent 필드를 합산하여 계산
+     * 
+     * @param userId 사용자 ID
+     * @return 총 학습 시간 (초 단위)
+     */
+    public long getTotalLearningTimeForUser(String userId) {
+        log.info("사용자 총 학습 시간 조회: userId={}", userId);
+        
+        try {
+            // 최적화된 쿼리로 총 학습 시간 조회
+            Long totalTimeSpent = questionAnswerRepository.getTotalLearningTimeByUserId(userId);
+            long result = totalTimeSpent != null ? totalTimeSpent : 0L;
+            
+            log.info("사용자 총 학습 시간 조회 성공: userId={}, totalTimeSpent={}초", userId, result);
+            return result;
+            
+        } catch (Exception e) {
+            log.error("사용자 총 학습 시간 조회 실패: userId={}", userId, e);
+            return 0L;
+        }
+    }
+
+    /**
+     * 특정 사용자의 모든 학습 세션에 대한 총 학습 시간 조회 (분 단위)
+     * 
+     * @param userId 사용자 ID
+     * @return 총 학습 시간 (분 단위, 소수점 2자리)
+     */
+    public double getTotalLearningTimeMinutesForUser(String userId) {
+        long totalSeconds = getTotalLearningTimeForUser(userId);
+        return Math.round((double) totalSeconds / 60.0 * 100.0) / 100.0; // 분 단위, 소수점 2자리
+    }
+
+    /**
+     * 특정 사용자의 모든 학습 세션에 대한 총 학습 시간 조회 (시간 단위)
+     * 
+     * @param userId 사용자 ID
+     * @return 총 학습 시간 (시간 단위, 소수점 2자리)
+     */
+    public double getTotalLearningTimeHoursForUser(String userId) {
+        long totalSeconds = getTotalLearningTimeForUser(userId);
+        return Math.round((double) totalSeconds / 3600.0 * 100.0) / 100.0; // 시간 단위, 소수점 2자리
+    }
+
+    /**
+     * 특정 사용자의 세션 타입별 통계 조회
+     * 
+     * @param userId 사용자 ID
+     * @return 세션 타입별 통계 정보
+     */
+    public List<Map<String, Object>> getSessionTypeStats(String userId) {
+        log.info("사용자 세션 타입별 통계 조회: userId={}", userId);
+        
+        try {
+            List<Object[]> sessionTypeStats = questionAnswerRepository.getSessionTypeStatsByUserId(userId);
+            
+            log.info("Repository에서 조회된 원본 데이터: {}", sessionTypeStats);
+            
+            if (sessionTypeStats.isEmpty()) {
+                log.info("사용자의 세션 타입별 통계 데이터가 없음: userId={}", userId);
+                return Collections.emptyList();
+            }
+            
+            List<Map<String, Object>> stats = new ArrayList<>();
+            
+            for (Object[] stat : sessionTypeStats) {
+                log.info("처리 중인 데이터: sessionType={}, totalSessions={}, completedSessions={}, totalQuestions={}, correctAnswers={}, totalTimeSpent={}", 
+                         stat[0], stat[1], stat[2], stat[3], stat[4], stat[5]);
+                
+                String sessionType = (String) stat[0];
+                Long totalSessions = (Long) stat[1];
+                Long completedSessions = (Long) stat[2];
+                Long totalQuestions = (Long) stat[3];
+                Long correctAnswers = (Long) stat[4];
+                Long totalTimeSpent = (Long) stat[5];
+                
+                // 정답률 계산
+                double accuracyRate = totalQuestions != null && totalQuestions > 0 ? 
+                    (double) correctAnswers / totalQuestions * 100 : 0.0;
+                
+                // 세션 타입별 한글명
+                String sessionTypeDisplayName = getSessionTypeDisplayName(sessionType);
+                
+                Map<String, Object> sessionTypeStat = new HashMap<>();
+                sessionTypeStat.put("sessionType", sessionType);
+                sessionTypeStat.put("sessionTypeDisplayName", sessionTypeDisplayName);
+                sessionTypeStat.put("totalSessions", totalSessions != null ? totalSessions.intValue() : 0);
+                sessionTypeStat.put("completedSessions", completedSessions != null ? completedSessions.intValue() : 0);
+                sessionTypeStat.put("totalQuestions", totalQuestions != null ? totalQuestions.intValue() : 0);
+                sessionTypeStat.put("correctAnswers", correctAnswers != null ? correctAnswers.intValue() : 0);
+                sessionTypeStat.put("accuracyRate", Math.round(accuracyRate * 100.0) / 100.0);
+                sessionTypeStat.put("totalTimeSpentSeconds", totalTimeSpent != null ? totalTimeSpent : 0L);
+                sessionTypeStat.put("totalTimeSpentMinutes", totalTimeSpent != null ? 
+                    Math.round((double) totalTimeSpent / 60.0 * 100.0) / 100.0 : 0.0);
+                sessionTypeStat.put("totalTimeSpentHours", totalTimeSpent != null ? 
+                    Math.round((double) totalTimeSpent / 3600.0 * 100.0) / 100.0 : 0.0);
+                
+                stats.add(sessionTypeStat);
+                
+                log.info("생성된 세션 타입 통계: {}", sessionTypeStat);
+            }
+            
+            log.info("사용자 세션 타입별 통계 조회 성공: userId={}, sessionTypeCount={}, stats={}", 
+                     userId, stats.size(), stats);
+            
+            return stats;
+            
+        } catch (Exception e) {
+            log.error("사용자 세션 타입별 통계 조회 실패: userId={}", userId, e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 세션 타입 표시명 반환
+     */
+    private String getSessionTypeDisplayName(String sessionType) {
+        switch (sessionType) {
+            case "PRACTICE": return "학습 세션";
+            case "REVIEW": return "복습 세션";
+            case "WRONG_ANSWER": return "오답 세션";
+            default: return sessionType;
+        }
+    }
+
+    /**
+     * 특정 사용자의 일별 학습 시간 통계 조회
+     * 
+     * @param userId 사용자 ID
+     * @return 일별 학습 시간 정보 리스트
+     */
+    public List<Map<String, Object>> getDailyLearningTimeStats(String userId) {
+        log.info("사용자 일별 학습 시간 통계 조회: userId={}", userId);
+        
+        try {
+            List<Object[]> dailyTimeStats = questionAnswerRepository.getDailyLearningTimeByUserId(userId);
+            
+            if (dailyTimeStats.isEmpty()) {
+                log.info("사용자의 일별 학습 시간 데이터가 없음: userId={}", userId);
+                return Collections.emptyList();
+            }
+            
+            List<Map<String, Object>> dailyStats = new ArrayList<>();
+            
+            for (Object[] stats : dailyTimeStats) {
+                LocalDate studyDate = (LocalDate) stats[0];
+                Long totalTimeSpent = (Long) stats[1];
+                Long questionCount = (Long) stats[2];
+                
+                Map<String, Object> dailyStat = new HashMap<>();
+                dailyStat.put("date", studyDate.toString());
+                dailyStat.put("timeSpentSeconds", totalTimeSpent != null ? totalTimeSpent : 0L);
+                dailyStat.put("timeSpentMinutes", totalTimeSpent != null ? 
+                    Math.round((double) totalTimeSpent / 60.0 * 100.0) / 100.0 : 0.0);
+                dailyStat.put("timeSpentHours", totalTimeSpent != null ? 
+                    Math.round((double) totalTimeSpent / 3600.0 * 100.0) / 100.0 : 0.0);
+                dailyStat.put("questionCount", questionCount != null ? questionCount.intValue() : 0);
+                
+                dailyStats.add(dailyStat);
+            }
+            
+            log.info("사용자 일별 학습 시간 통계 조회 성공: userId={}, dayCount={}", 
+                     userId, dailyStats.size());
+            
+            return dailyStats;
+            
+        } catch (Exception e) {
+            log.error("사용자 일별 학습 시간 통계 조회 실패: userId={}", userId, e);
+            return Collections.emptyList();
+        }
+    }
+
+
+    /**
+     * 특정 사용자의 월별 학습 시간 통계 조회
+     * 
+     * @param userId 사용자 ID
+     * @return 월별 학습 시간 정보 리스트
+     */
+    public List<Map<String, Object>> getMonthlyLearningTimeStats(String userId) {
+        log.info("사용자 월별 학습 시간 통계 조회: userId={}", userId);
+        
+        try {
+            List<Object[]> monthlyTimeStats = questionAnswerRepository.getMonthlyLearningTimeByUserId(userId);
+            
+            if (monthlyTimeStats.isEmpty()) {
+                log.info("사용자의 월별 학습 시간 데이터가 없음: userId={}", userId);
+                return Collections.emptyList();
+            }
+            
+            List<Map<String, Object>> monthlyStats = new ArrayList<>();
+            
+            for (Object[] stats : monthlyTimeStats) {
+                Integer studyYear = (Integer) stats[0];
+                Integer studyMonth = (Integer) stats[1];
+                Long totalTimeSpent = (Long) stats[2];
+                Long questionCount = (Long) stats[3];
+                
+                Map<String, Object> monthlyStat = new HashMap<>();
+                monthlyStat.put("year", studyYear);
+                monthlyStat.put("month", studyMonth);
+                monthlyStat.put("yearMonth", String.format("%04d-%02d", studyYear, studyMonth));
+                monthlyStat.put("timeSpentSeconds", totalTimeSpent != null ? totalTimeSpent : 0L);
+                monthlyStat.put("timeSpentMinutes", totalTimeSpent != null ? 
+                    Math.round((double) totalTimeSpent / 60.0 * 100.0) / 100.0 : 0.0);
+                monthlyStat.put("timeSpentHours", totalTimeSpent != null ? 
+                    Math.round((double) totalTimeSpent / 3600.0 * 100.0) / 100.0 : 0.0);
+                monthlyStat.put("questionCount", questionCount != null ? questionCount.intValue() : 0);
+                
+                monthlyStats.add(monthlyStat);
+            }
+            
+            log.info("사용자 월별 학습 시간 통계 조회 성공: userId={}, monthCount={}", 
+                     userId, monthlyStats.size());
+            
+            return monthlyStats;
+            
+        } catch (Exception e) {
+            log.error("사용자 월별 학습 시간 통계 조회 실패: userId={}", userId, e);
+            return Collections.emptyList();
+        }
     }
 }

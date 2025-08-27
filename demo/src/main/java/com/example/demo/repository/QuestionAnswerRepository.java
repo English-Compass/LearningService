@@ -242,20 +242,94 @@ public interface QuestionAnswerRepository extends JpaRepository<QuestionAnswer, 
                                                            @Param("startDate") LocalDateTime startDate, 
                                                            @Param("endDate") LocalDateTime endDate);
 
+    // ===== 학습 시간 통계를 위한 최적화된 쿼리 메서드들 =====
+
     /**
-     * 사용자 ID와 문제 유형과 날짜 범위로 답변 기록 조회 (Question과 JOIN)
-     * 특정 기간의 특정 문제 유형별 성과 분석에 사용
+     * 사용자 ID로 총 학습 시간 조회 (초 단위)
+     * 모든 세션의 timeSpent 합계를 한 번의 쿼리로 조회
      */
-    @Query("SELECT qa FROM QuestionAnswer qa " +
-           "JOIN Question q ON qa.questionId = q.questionId " +
+    @Query("SELECT COALESCE(SUM(qa.timeSpent), 0) FROM QuestionAnswer qa " +
+           "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
+           "WHERE ls.userId = :userId AND qa.timeSpent IS NOT NULL")
+    Long getTotalLearningTimeByUserId(@Param("userId") String userId);
+
+    /**
+     * 사용자 ID와 날짜 범위로 총 학습 시간 조회 (초 단위)
+     * 특정 기간의 timeSpent 합계를 한 번의 쿼리로 조회
+     */
+    @Query("SELECT COALESCE(SUM(qa.timeSpent), 0) FROM QuestionAnswer qa " +
            "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
            "WHERE ls.userId = :userId " +
-           "AND q.questionType = :questionType " +
+           "AND qa.timeSpent IS NOT NULL " +
            "AND qa.answeredAt >= :startDate " +
-           "AND qa.answeredAt <= :endDate " +
-           "ORDER BY qa.answeredAt ASC")
-    List<QuestionAnswer> findByUserIdAndQuestionTypeAndDateRange(@Param("userId") String userId, 
-                                                                @Param("questionType") String questionType, 
-                                                                @Param("startDate") LocalDateTime startDate, 
-                                                                @Param("endDate") LocalDateTime endDate);
+           "AND qa.answeredAt <= :endDate")
+    Long getTotalLearningTimeByUserIdAndDateRange(@Param("userId") String userId, 
+                                                 @Param("startDate") LocalDateTime startDate, 
+                                                 @Param("endDate") LocalDateTime endDate);
+
+    /**
+     * 사용자 ID로 일별 학습 시간 집계 조회
+     * 일별로 timeSpent 합계를 그룹화하여 조회
+     */
+    @Query("SELECT DATE(qa.answeredAt) as studyDate, " +
+           "COALESCE(SUM(qa.timeSpent), 0) as totalTimeSpent, " +
+           "COUNT(qa) as questionCount " +
+           "FROM QuestionAnswer qa " +
+           "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
+           "WHERE ls.userId = :userId " +
+           "AND qa.timeSpent IS NOT NULL " +
+           "GROUP BY DATE(qa.answeredAt) " +
+           "ORDER BY studyDate DESC")
+    List<Object[]> getDailyLearningTimeByUserId(@Param("userId") String userId);
+
+    /**
+     * 사용자 ID로 세션별 학습 시간 집계 조회
+     * 세션별로 timeSpent 합계를 그룹화하여 조회
+     */
+    @Query("SELECT qa.sessionId, " +
+           "COALESCE(SUM(qa.timeSpent), 0) as totalTimeSpent, " +
+           "COUNT(qa) as questionCount, " +
+           "ls.sessionType, " +
+           "ls.startedAt, " +
+           "ls.completedAt " +
+           "FROM QuestionAnswer qa " +
+           "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
+           "WHERE ls.userId = :userId " +
+           "AND qa.timeSpent IS NOT NULL " +
+           "GROUP BY qa.sessionId, ls.sessionType, ls.startedAt, ls.completedAt " +
+           "ORDER BY ls.startedAt DESC")
+    List<Object[]> getSessionLearningTimeByUserId(@Param("userId") String userId);
+
+    /**
+     * 사용자 ID로 월별 학습 시간 집계 조회
+     * 월별로 timeSpent 합계를 그룹화하여 조회
+     */
+    @Query("SELECT YEAR(qa.answeredAt) as studyYear, " +
+           "MONTH(qa.answeredAt) as studyMonth, " +
+           "COALESCE(SUM(qa.timeSpent), 0) as totalTimeSpent, " +
+           "COUNT(qa) as questionCount " +
+           "FROM QuestionAnswer qa " +
+           "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
+           "WHERE ls.userId = :userId " +
+           "AND qa.timeSpent IS NOT NULL " +
+           "GROUP BY YEAR(qa.answeredAt), MONTH(qa.answeredAt) " +
+           "ORDER BY studyYear DESC, studyMonth DESC")
+    List<Object[]> getMonthlyLearningTimeByUserId(@Param("userId") String userId);
+
+    /**
+     * 사용자 ID로 세션 타입별 통계 조회
+     * 세션 타입별로 정답률, 완료된 세션 수, 총 문제 수 등을 집계
+     */
+    @Query("SELECT CAST(ls.sessionType AS string), " +
+           "COUNT(DISTINCT ls.sessionId) as totalSessions, " +
+           "COUNT(CASE WHEN ls.status = 'COMPLETED' THEN 1 END) as completedSessions, " +
+           "COUNT(qa) as totalQuestions, " +
+           "SUM(CASE WHEN qa.isCorrect = true THEN 1 ELSE 0 END) as correctAnswers, " +
+           "SUM(qa.timeSpent) as totalTimeSpent " +
+           "FROM LearningSession ls " +
+           "LEFT JOIN QuestionAnswer qa ON ls.sessionId = qa.sessionId " +
+           "WHERE ls.userId = :userId " +
+           "GROUP BY ls.sessionType " +
+           "ORDER BY ls.sessionType")
+    List<Object[]> getSessionTypeStatsByUserId(@Param("userId") String userId);
 }

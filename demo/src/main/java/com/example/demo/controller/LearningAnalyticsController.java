@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Collections;
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * 학습 분석 데이터 조회 전용 컨트롤러
@@ -240,7 +241,7 @@ public class LearningAnalyticsController {
     }
 
     /**
-     * 문제 통계 데이터 조회 (뷰 기반)
+     * 문제 통계 데이터 조회 (뷰 기반) -- 관리자용 
      * question_stats_view 뷰에서 직접 조회
      * GET /api/learning-analytics/question-stats
      */
@@ -260,7 +261,7 @@ public class LearningAnalyticsController {
     /**
      * 저장된 학습 패턴 분석 결과 조회
      * learning_pattern_analysis 테이블에서 조회
-     * GET /api/learning-analytics/users/{userId}/stored-pattern/{analysisType}
+     * GET /api/learning-analytics/users/{userId}/stored-pattern/{analysisType} ex)  PERIOD_ANALYSIS, SESSION_ANALYSIS
      */
     @GetMapping("/users/{userId}/stored-pattern/{analysisType}")
     public ResponseEntity<Map<String, Object>> getStoredLearningPattern(
@@ -355,5 +356,139 @@ public class LearningAnalyticsController {
         
         List<QuestionTypeChartData> chartData = learningAnalyticsService.getQuestionTypeChart(userId, startDate, endDate);
         return ResponseEntity.ok(chartData);
+    }
+
+    // ===== 학습 시간 통계 API =====
+
+    /**
+     * 특정 사용자의 모든 학습 세션에 대한 총 학습 시간 조회
+     * GET /api/learning-analytics/users/{userId}/total-learning-time
+     */
+    @GetMapping("/users/{userId}/total-learning-time")
+    public ResponseEntity<Map<String, Object>> getTotalLearningTime(@PathVariable String userId) {
+        log.info("사용자 총 학습 시간 조회: userId={}", userId);
+        
+        try {
+            // 기본 학습 시간 정보 조회
+            long totalSeconds = learningAnalyticsService.getTotalLearningTimeForUser(userId);
+            double totalMinutes = learningAnalyticsService.getTotalLearningTimeMinutesForUser(userId);
+            double totalHours = learningAnalyticsService.getTotalLearningTimeHoursForUser(userId);
+            
+            log.info("기본 학습 시간 조회 완료: totalSeconds={}, totalMinutes={}, totalHours={}", 
+                     totalSeconds, totalMinutes, totalHours);
+            
+            // 세션 타입별 통계 조회
+            log.info("세션 타입별 통계 조회 시작");
+            List<Map<String, Object>> sessionTypeStats = learningAnalyticsService.getSessionTypeStats(userId);
+            log.info("세션 타입별 통계 조회 완료: sessionTypeStats={}", sessionTypeStats);
+            
+            // 전체 요약 통계 계산
+            int totalSessions = sessionTypeStats.stream()
+                .mapToInt(stat -> (Integer) stat.get("totalSessions"))
+                .sum();
+            
+            int totalCompletedSessions = sessionTypeStats.stream()
+                .mapToInt(stat -> (Integer) stat.get("completedSessions"))
+                .sum();
+            
+            int totalQuestions = sessionTypeStats.stream()
+                .mapToInt(stat -> (Integer) stat.get("totalQuestions"))
+                .sum();
+            
+            int totalCorrectAnswers = sessionTypeStats.stream()
+                .mapToInt(stat -> (Integer) stat.get("correctAnswers"))
+                .sum();
+            
+            // 전체 정답률 계산
+            double overallAccuracyRate = totalQuestions > 0 ? 
+                (double) totalCorrectAnswers / totalQuestions * 100 : 0.0;
+            
+            log.info("통계 계산 완료: totalSessions={}, totalCompletedSessions={}, totalQuestions={}, totalCorrectAnswers={}, overallAccuracyRate={}", 
+                     totalSessions, totalCompletedSessions, totalQuestions, totalCorrectAnswers, overallAccuracyRate);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("userId", userId);
+            response.put("totalLearningTimeSeconds", totalSeconds);
+            response.put("totalLearningTimeMinutes", totalMinutes);
+            response.put("totalLearningTimeHours", totalHours);
+            response.put("formattedTime", formatLearningTime(totalSeconds));
+            response.put("totalSessions", totalSessions);
+            response.put("totalCompletedSessions", totalCompletedSessions);
+            response.put("totalQuestions", totalQuestions);
+            response.put("totalCorrectAnswers", totalCorrectAnswers);
+            response.put("overallAccuracyRate", Math.round(overallAccuracyRate * 100.0) / 100.0);
+            response.put("sessionTypeStats", sessionTypeStats);
+            
+            log.info("사용자 총 학습 시간 조회 성공: userId={}, totalSeconds={}, totalSessions={}", 
+                     userId, totalSeconds, totalSessions);
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("사용자 총 학습 시간 조회 실패: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 특정 사용자의 월별 학습 시간 통계 조회
+     * GET /api/learning-analytics/users/{userId}/monthly-learning-time
+     */
+    @GetMapping("/users/{userId}/monthly-learning-time")
+    public ResponseEntity<Map<String, Object>> getMonthlyLearningTime(@PathVariable String userId) {
+        log.info("사용자 월별 학습 시간 통계 조회: userId={}", userId);
+        
+        try {
+            List<Map<String, Object>> monthlyStats = learningAnalyticsService.getMonthlyLearningTimeStats(userId);
+            
+            // 전체 요약 통계 계산
+            long totalSeconds = monthlyStats.stream()
+                .mapToLong(detail -> (Long) detail.get("timeSpentSeconds"))
+                .sum();
+            
+            double totalMinutes = Math.round((double) totalSeconds / 60.0 * 100.0) / 100.0;
+            double totalHours = Math.round((double) totalSeconds / 3600.0 * 100.0) / 100.0;
+            
+            Map<String, Object> response = Map.of(
+                "userId", userId,
+                "totalMonths", monthlyStats.size(),
+                "totalLearningTimeSeconds", totalSeconds,
+                "totalLearningTimeMinutes", totalMinutes,
+                "totalLearningTimeHours", totalHours,
+                "formattedTotalTime", formatLearningTime(totalSeconds),
+                "monthlyStats", monthlyStats
+            );
+            
+            log.info("사용자 월별 학습 시간 통계 조회 성공: userId={}, monthCount={}", 
+                     userId, monthlyStats.size());
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("사용자 월별 학습 시간 통계 조회 실패: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 학습 시간을 읽기 쉬운 형태로 포맷팅
+     */
+    private String formatLearningTime(long totalSeconds) {
+        if (totalSeconds == 0) {
+            return "0시간 0분 0초";
+        }
+        
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
+        
+        StringBuilder formatted = new StringBuilder();
+        if (hours > 0) {
+            formatted.append(hours).append("시간 ");
+        }
+        if (minutes > 0 || hours > 0) {
+            formatted.append(minutes).append("분 ");
+        }
+        formatted.append(seconds).append("초");
+        
+        return formatted.toString();
     }
 }
