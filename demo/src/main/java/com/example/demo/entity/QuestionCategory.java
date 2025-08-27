@@ -63,7 +63,7 @@ public class QuestionCategory {
     public enum QuestionType {
         FILL_IN_THE_BLANK("빈칸 채우기"),
         IDIOM_IN_CONTEXT("문장 속 특정 숙어"),
-        SENTENCE_COMPLETION("문장 완성");
+        ANSWER_IN_CONTEXT("문장 해석 및 문답"); //같은 의미를 가지는 문장들 중 선택
 
         private final String description;
 
@@ -127,7 +127,7 @@ public class QuestionCategory {
         return new QuestionType[]{
             QuestionType.FILL_IN_THE_BLANK,
             QuestionType.IDIOM_IN_CONTEXT,
-            QuestionType.SENTENCE_COMPLETION
+            QuestionType.ANSWER_IN_CONTEXT
         };
     }
 

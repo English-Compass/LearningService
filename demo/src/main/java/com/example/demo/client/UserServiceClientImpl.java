@@ -28,10 +28,6 @@ public class UserServiceClientImpl implements UserServiceClient {
                 QuestionCategory.MinorCategory.MEETING_CONFERENCE,
                 QuestionCategory.MinorCategory.CUSTOMER_SERVICE
             ))
-            .selectedQuestionTypes(List.of(
-                QuestionCategory.QuestionType.FILL_IN_THE_BLANK,
-                QuestionCategory.QuestionType.IDIOM_IN_CONTEXT
-            ))
             .learningStyle(UserProfileInfo.LearningStyle.AUDITORY)
             .difficultyPreference(UserProfileInfo.DifficultyLevel.INTERMEDIATE)
             .hasInterestsSet(true)

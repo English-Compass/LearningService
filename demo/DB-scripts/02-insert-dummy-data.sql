@@ -97,3 +97,4 @@ INSERT INTO question_answers (session_id, question_id, question_text, option_a, 
 ('session016', 'q019', 'The weather _____ nice today.', 'is', 'are', 'be', 'are', 'is', false, 10, 0, 25, '2024-01-01 08:20:00', '단수 주어 weather에는 is를 사용합니다.', '단수/복수 헷갈림', 2, 'STUDY', 'GRAMMAR', 'FILL_IN_THE_BLANK', 'subject_verb_agreement,singular'),
 ('session017', 'q020', 'I _____ to school by bus.', 'go', 'goes', 'going', 'going', 'go', false, 10, 0, 30, '2024-01-02 08:15:00', '일반현재시제는 동사원형을 사용합니다.', '동사형 헷갈림', 2, 'STUDY', 'VOCABULARY', 'FILL_IN_THE_BLANK', 'simple_present,verb_form');
 
+

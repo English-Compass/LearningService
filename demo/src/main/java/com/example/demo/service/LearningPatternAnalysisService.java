@@ -1,284 +1,170 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.LearningCompletedEvent;
+import com.example.demo.dto.analytics.LearningPatternAnalysisDTO;
+import com.example.demo.dto.analytics.QuestionTypePerformance;
+import com.example.demo.entity.LearningSession;
 import com.example.demo.entity.QuestionAnswer;
 import com.example.demo.repository.QuestionAnswerRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
+import com.example.demo.repository.LearningSessionRepository;
+import com.example.demo.entity.QuestionCategory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
-import lombok.Data;
-import lombok.Builder;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
+import java.util.HashMap;
+import java.util.ArrayList;
 
-/**
- * 학습 패턴 분석 서비스
- * 학습 완료 이벤트를 소비하여 학습자의 답변 패턴을 분석하고, 
- * 분석 결과를 ReviewService에 전달하여 개인화된 학습 제안 제공
- */
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class LearningPatternAnalysisService {
 
-    private final QuestionAnswerRepository questionAnswerRepository;
-    private final ReviewService reviewService;
+    @Autowired
+    private QuestionAnswerRepository questionAnswerRepository;
+
+    @Autowired
+    private LearningSessionRepository learningSessionRepository;
+ 
 
     /**
-     * 학습 완료 이벤트 리스너
-     * 전체 학습 완료 시 최종 분석 및 개인화된 복습 문제 생성
+     * 개별 세션에 대한 학습 패턴 분석 수행
+     * 외부 DTO를 직접 사용하여 분석 결과 반환
      */
-    @EventListener
-    public void handleLearningCompletedEvent(LearningCompletedEvent event) {
-        try {
-            log.info("학습 완료 이벤트 수신: sessionId={}, userId={}", 
-                event.getSessionId(), event.getUserId());
-            
-            // 1. 전체 학습 패턴 분석
-            CompleteLearningAnalysis analysis = analyzeCompleteLearning(event);
-            
-            // 2. 분석 결과를 ReviewService에 전달하여 개인화된 복습 문제 세트 생성
-            reviewService.createPersonalizedReviewSet(analysis);
-            
-            log.info("학습 완료 패턴 분석 완료: sessionId={}, pattern={}, score={}", 
-                event.getSessionId(), analysis.getOverallLearningPattern(), event.getScore());
-                
-        } catch (Exception e) {
-            log.error("학습 완료 이벤트 처리 실패: sessionId={}", event.getSessionId(), e);
-        }
-    }
-
-    /**
-     * 학습 패턴 분석
-     */
-    private LearningPatternInfo analyzeLearningPattern(String sessionId) {
-        List<QuestionAnswer> answers = questionAnswerRepository.findBySessionIdOrderByAnsweredAtAsc(sessionId);
+    public LearningPatternAnalysisDTO performPatternAnalysis(LearningSessionResult sessionResult) {
+        // 문제 유형별 성과 분석
+        List<QuestionTypePerformance> questionTypePerformances = analyzeQuestionTypePerformance(
+            sessionResult.getSessionId(), sessionResult.getUserId());
         
-        if (answers.isEmpty()) {
-            return LearningPatternInfo.builder()
-                .averageTimePerQuestion(0.0)
-                .learningPattern("NEW_LEARNER")
+        // 외부 DTO로 직접 변환하여 반환
+        return LearningPatternAnalysisDTO.builder()
+                .analysisType("SESSION_ANALYSIS")
+                .userId(sessionResult.getUserId())
+                .sessionId(sessionResult.getSessionId())
+                .questionTypePerformances(questionTypePerformances)
+                .reviewRequiredTypes(extractReviewRequiredTypes(questionTypePerformances))
+                .improvementRequiredTypes(extractImprovementRequiredTypes(questionTypePerformances))
+                .strengthTypes(extractStrengthTypes(questionTypePerformances))
+                .recentWrongQuestionIds(extractRecentWrongQuestionIds(sessionResult.getQuestionAnswers()))
+                .longIntervalTypes(extractLongIntervalTypes(Arrays.asList()))
+                .slowSolvingTypes(extractSlowSolvingTypes(questionTypePerformances))
+                .overallAccuracyRate(calculateAccuracyRate(sessionResult))
+                .averageSolvingTime(calculateAverageSolvingTime(sessionResult))
+                .studyFrequency("WEEKLY")
+                .preferredStudyTime("EVENING")
+                .analyzedAt(LocalDateTime.now())
                 .build();
-        }
-        
-        // 평균 시간 계산
-        double averageTime = calculateAverageTime(answers);
-        
-        // 학습 패턴 결정 (시간만 고려)
-        String pattern = determineLearningPattern(averageTime);
-        
-        return LearningPatternInfo.builder()
-            .averageTimePerQuestion(averageTime)
-            .learningPattern(pattern)
-            .detailedPattern(pattern)
-            .build();
     }
 
     /**
-     * 전체 학습 완료 분석
+     * 전체 학습 기간에 대한 종합 분석 수행
+     * 개별 세션 분석과 동일한 분석 로직을 사용하여 일관성 있는 결과 제공
      */
-    public CompleteLearningAnalysis analyzeCompleteLearning(LearningCompletedEvent event) {
-        List<QuestionAnswer> answers = questionAnswerRepository.findBySessionIdOrderByAnsweredAtAsc(event.getSessionId());
-        
-        // 기본 통계
-        long totalDuration = calculateTotalDuration(answers);
-        double averageTime = calculateAverageTime(answers);
-        List<String> wrongQuestions = getWrongQuestionIds(answers);
-        
-        // 문제 유형별 성과 분석 (3가지 고정 유형)
-        List<QuestionTypePerformance> questionTypePerformances = analyzeQuestionTypePerformance(answers);
-        
-        // 취약 영역 식별 (3가지 문제 유형 기준)
-        List<String> weakQuestionTypes = identifyWeakQuestionTypes(questionTypePerformances);
-        
-        // 학습 패턴 분석
-        String overallPattern = determineOverallLearningPattern(answers);
-        double consistencyScore = calculateConsistencyScore(answers);
-        
-        // 복습 문제 추천 (오답 문제들만)
-        List<String> reviewQuestions = recommendReviewQuestions(answers);
-        
-        // 학습 제안
-        String suggestion = generateLearningSuggestion(overallPattern, consistencyScore, weakQuestionTypes);
-        List<String> focusAreas = determineFocusAreas(weakQuestionTypes, questionTypePerformances);
-        int estimatedReviewTime = estimateReviewTime(wrongQuestions.size(), averageTime);
-        
-        return CompleteLearningAnalysis.builder()
-            .sessionId(event.getSessionId())
-            .userId(event.getUserId())
-            .totalDuration(totalDuration)
-            .averageTimePerQuestion(averageTime)
-            .wrongQuestionIds(wrongQuestions)
-            .weakQuestionTypes(weakQuestionTypes) // 3가지 문제 유형 기준
-            .questionTypePerformances(questionTypePerformances) // 문제 유형별 상세 성과
-            .overallLearningPattern(overallPattern)
-            .consistencyScore(consistencyScore)
-            .recommendedReviewQuestions(reviewQuestions)
-            .learningSuggestion(suggestion)
-            .focusAreas(focusAreas)
-            .estimatedReviewTime(estimatedReviewTime)
-            .build();
-    }
-
-    // ===== 분석 유틸리티 메서드들 =====
-
-    // 연속 정답 계산 메서드는 제거됨 (시간 중심 분석으로 변경)
-
-    // 연속 오답 계산 메서드는 제거됨 (시간 중심 분석으로 변경)
-
-    private double calculateAverageTime(List<QuestionAnswer> answers) {
-        return answers.stream()
-            .filter(answer -> answer.getTimeSpent() != null)
-            .mapToInt(QuestionAnswer::getTimeSpent)
-            .average()
-            .orElse(0.0);
-    }
-
-    private long calculateTotalDuration(List<QuestionAnswer> answers) {
-        if (answers.size() < 2) return 0;
-        
-        QuestionAnswer first = answers.get(0);
-        QuestionAnswer last = answers.get(answers.size() - 1);
-        
-        if (first.getAnsweredAt() != null && last.getAnsweredAt() != null) {
-            return Duration.between(first.getAnsweredAt(), last.getAnsweredAt()).getSeconds();
-        }
-        return 0;
-    }
-
-    private List<String> getWrongQuestionIds(List<QuestionAnswer> answers) {
-        return answers.stream()
-            .filter(answer -> !answer.getIsCorrect())
-            .map(QuestionAnswer::getQuestionId)
-            .collect(Collectors.toList());
+    public LearningPatternAnalysisDTO analyzeCompleteLearning(String userId, LocalDateTime startDate, LocalDateTime endDate) {
+        return performCompleteLearningAnalysis(userId, startDate, endDate, null);
     }
 
     /**
-     * 계층적 카테고리별 성과 분석 (대분류 → 소분류)
+     * 증분 분석을 지원하는 전체 학습 분석
+     * 이전 분석 결과가 있으면 병합하여 성능 향상
      */
-    private Map<String, Object> calculateCategoryAccuracy(List<QuestionAnswer> answers) {
-        Map<String, Object> hierarchicalCategoryAccuracy = new HashMap<>();
+    public LearningPatternAnalysisDTO analyzeCompleteLearningIncremental(String userId, LocalDateTime startDate, LocalDateTime endDate) {
+        // 이전 분석 결과 조회 (최근 30일 내)
+        LocalDateTime previousStartDate = startDate.minusDays(30);
+        List<LearningPatternAnalysisDTO> previousAnalyses = findPreviousAnalyses(userId, previousStartDate, endDate);
         
-        // 대분류별로 그룹화하고, 각 대분류 내에서 소분류별 성과 분석
-        Map<String, Map<String, Double>> categoryAccuracy = answers.stream()
-            .collect(Collectors.groupingBy(
-                QuestionAnswer::getMajorCategory,
-                Collectors.groupingBy(
-                    QuestionAnswer::getMinorCategory,
-                    Collectors.averagingInt(answer -> answer.getIsCorrect() ? 1 : 0)
-                )
-            ));
-        
-        // 각 대분류별로 전체 성과와 소분류별 성과를 포함한 구조 생성
-        for (Map.Entry<String, Map<String, Double>> majorEntry : categoryAccuracy.entrySet()) {
-            String majorCategory = majorEntry.getKey();
-            Map<String, Double> minorCategories = majorEntry.getValue();
-            
-            // 대분류 전체 성과 계산
-            double majorCategoryOverallAccuracy = minorCategories.values().stream()
-                .mapToDouble(Double::doubleValue)
-                .average()
-                .orElse(0.0);
-            
-            // 대분류별 상세 정보 생성
-            Map<String, Object> majorCategoryInfo = new HashMap<>();
-            majorCategoryInfo.put("overallAccuracy", majorCategoryOverallAccuracy);
-            majorCategoryInfo.put("minorCategories", minorCategories);
-            majorCategoryInfo.put("isWeakArea", majorCategoryOverallAccuracy < 0.7);
-            
-            hierarchicalCategoryAccuracy.put(majorCategory, majorCategoryInfo);
+        if (!previousAnalyses.isEmpty()) {
+            // 가장 최근 분석 결과와 병합
+            LearningPatternAnalysisDTO latestAnalysis = previousAnalyses.get(0);
+            return performCompleteLearningAnalysisWithMerge(userId, startDate, endDate, latestAnalysis);
+        } else {
+            // 이전 분석이 없으면 전체 분석 수행
+            return performCompleteLearningAnalysis(userId, startDate, endDate, null);
         }
-        
-        return hierarchicalCategoryAccuracy;
     }
 
     /**
-     * 계층적 취약 영역 식별 (대분류 → 소분류)
+     * 전체 학습 분석 수행 (공통 로직)
      */
-    private Map<String, Object> identifyWeakCategories(Map<String, Object> hierarchicalCategoryAccuracy) {
-        Map<String, Object> weakAreas = new HashMap<>();
+    private LearningPatternAnalysisDTO performCompleteLearningAnalysis(String userId, LocalDateTime startDate, LocalDateTime endDate, 
+                                                                   LearningPatternAnalysisDTO previousAnalysis) {
+        // 전체 기간의 모든 세션 데이터 수집
+        List<LearningSession> sessions = learningSessionRepository.findByUserIdAndStartedAtBetweenOrderByCreatedAtDesc(
+            userId, startDate, endDate);
         
-        for (Map.Entry<String, Object> entry : hierarchicalCategoryAccuracy.entrySet()) {
-            String majorCategory = entry.getKey();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> majorCategoryInfo = (Map<String, Object>) entry.getValue();
-            
-            boolean isWeakArea = (Boolean) majorCategoryInfo.get("isWeakArea");
-            
-            if (isWeakArea) {
-                @SuppressWarnings("unchecked")
-                Map<String, Double> minorCategories = (Map<String, Double>) majorCategoryInfo.get("minorCategories");
-                
-                // 소분류별 취약 영역 식별
-                List<String> weakMinorCategories = minorCategories.entrySet().stream()
-                    .filter(minorEntry -> minorEntry.getValue() < 0.7)
-                    .map(Map.Entry::getKey)
-                    .collect(Collectors.toList());
-                
-                Map<String, Object> weakAreaInfo = new HashMap<>();
-                weakAreaInfo.put("overallAccuracy", majorCategoryInfo.get("overallAccuracy"));
-                weakAreaInfo.put("weakMinorCategories", weakMinorCategories);
-                weakAreaInfo.put("allMinorCategories", minorCategories);
-                
-                weakAreas.put(majorCategory, weakAreaInfo);
-            }
+        // 전체 기간의 모든 문제 답변 데이터 수집
+        // QuestionAnswer에는 userId가 없으므로 sessionId를 통해 조회
+        List<QuestionAnswer> allAnswers = new ArrayList<>();
+        for (LearningSession session : sessions) {
+            List<QuestionAnswer> sessionAnswers = questionAnswerRepository.findBySessionIdOrderByAnsweredAtAsc(session.getSessionId());
+            allAnswers.addAll(sessionAnswers);
         }
         
-        return weakAreas;
+        return buildCompleteLearningAnalysis(userId, startDate, endDate, sessions, allAnswers, previousAnalysis);
     }
 
     /**
-     * 문제 유형별 성과 분석
+     * 이전 분석 결과와 병합하여 전체 학습 분석 수행
      */
-    private List<QuestionTypePerformance> analyzeQuestionTypePerformance(List<QuestionAnswer> answers) {
+    private LearningPatternAnalysisDTO performCompleteLearningAnalysisWithMerge(String userId, LocalDateTime startDate, LocalDateTime endDate,
+                                                                           LearningPatternAnalysisDTO previousAnalysis) {
+        // 이전 분석 이후의 새로운 데이터만 조회
+        LocalDateTime lastAnalyzedAt = previousAnalysis.getAnalyzedAt();
+        List<LearningSession> newSessions = learningSessionRepository.findByUserIdAndStartedAtBetweenOrderByCreatedAtDesc(
+            userId, lastAnalyzedAt, endDate);
+        
+        // QuestionAnswer에는 userId가 없으므로 sessionId를 통해 조회
+        List<QuestionAnswer> newAnswers = new ArrayList<>();
+        for (LearningSession session : newSessions) {
+            List<QuestionAnswer> sessionAnswers = questionAnswerRepository.findBySessionIdOrderByAnsweredAtAsc(session.getSessionId());
+            newAnswers.addAll(sessionAnswers);
+        }
+        
+        // 이전 분석 결과와 새로운 데이터 병합
+        return mergeWithPreviousAnalysis(userId, startDate, endDate, previousAnalysis, newSessions, newAnswers);
+    }
+
+    /**
+     * 문제 유형별 성과 분석 - 개별 세션용
+     */
+    private List<QuestionTypePerformance> analyzeQuestionTypePerformance(String sessionId, String userId) {
+        return analyzeQuestionTypePerformanceCommon(sessionId, userId, null, null);
+    }
+
+    /**
+     * 문제 유형별 성과 분석 - 전체 학습용
+     */
+    private List<QuestionTypePerformance> analyzeQuestionTypePerformanceByUserId(String userId, LocalDateTime startDate, LocalDateTime endDate) {
+        return analyzeQuestionTypePerformanceCommon(null, userId, startDate, endDate);
+    }
+
+    /**
+     * 문제 유형별 성과 분석 - 공통 로직 (중복 제거)
+     */
+    private List<QuestionTypePerformance> analyzeQuestionTypePerformanceCommon(String sessionId, String userId, 
+                                                                             LocalDateTime startDate, LocalDateTime endDate) {
         List<QuestionTypePerformance> performances = new ArrayList<>();
         
-        // 3가지 문제 유형별 성과 분석
-        String[] questionTypes = {"FILL_IN_THE_BLANK", "SYNONYM_SELECTION", "PRONUNCIATION_RECOGNITION"};
-        
-        for (String type : questionTypes) {
-            List<QuestionAnswer> typeAnswers = answers.stream()
-                .filter(answer -> type.equals(answer.getQuestionType()))
-                .collect(Collectors.toList());
+        for (QuestionCategory.QuestionType type : QuestionCategory.QuestionType.values()) {
+            List<QuestionAnswer> typeAnswers;
+            
+            if (sessionId != null) {
+                // 세션별 분석
+                typeAnswers = questionAnswerRepository.findBySessionIdAndQuestionType(sessionId, type.name());
+            } else {
+                // 사용자별 기간별 분석
+                // QuestionAnswer에는 userId가 없으므로 sessionId를 통해 조회
+                typeAnswers = new ArrayList<>();
+                List<LearningSession> userSessions = learningSessionRepository.findByUserIdAndStartedAtBetweenOrderByCreatedAtDesc(
+                    userId, startDate, endDate);
+                for (LearningSession session : userSessions) {
+                    List<QuestionAnswer> sessionAnswers = questionAnswerRepository.findBySessionIdAndQuestionType(
+                        session.getSessionId(), type.name());
+                    typeAnswers.addAll(sessionAnswers);
+                }
+            }
             
             if (!typeAnswers.isEmpty()) {
-                double accuracy = typeAnswers.stream()
-                    .mapToInt(answer -> answer.getIsCorrect() ? 1 : 0)
-                    .average()
-                    .orElse(0.0);
-                
-                int totalCount = typeAnswers.size();
-                int correctCount = (int) typeAnswers.stream()
-                    .filter(QuestionAnswer::getIsCorrect)
-                    .count();
-                
-                double averageTime = typeAnswers.stream()
-                    .filter(answer -> answer.getTimeSpent() != null)
-                    .mapToInt(QuestionAnswer::getTimeSpent)
-                    .average()
-                    .orElse(0.0);
-                
-                int difficulty = typeAnswers.stream()
-                    .filter(answer -> answer.getDifficulty() != null)
-                    .mapToInt(QuestionAnswer::getDifficulty)
-                    .max()
-                    .orElse(1);
-                
-                QuestionTypePerformance performance = QuestionTypePerformance.builder()
-                    .questionType(type)
-                    .totalQuestions(totalCount)
-                    .correctAnswers(correctCount)
-                    .accuracy(accuracy)
-                    .isWeakArea(accuracy < 0.7)
-                    .averageTime(averageTime)
-                    .difficulty(difficulty)
-                    .build();
-                
+                QuestionTypePerformance performance = buildQuestionTypePerformance(typeAnswers, type.name());
                 performances.add(performance);
             }
         }
@@ -287,205 +173,323 @@ public class LearningPatternAnalysisService {
     }
 
     /**
-     * 취약한 문제 유형 식별 (3가지 고정 유형 기준)
+     * 문제 유형별 성과 정보 생성 - 공통 로직
      */
-    private List<String> identifyWeakQuestionTypes(List<QuestionTypePerformance> questionTypePerformances) {
-        return questionTypePerformances.stream()
-            .filter(QuestionTypePerformance::isWeakArea)
-            .map(QuestionTypePerformance::getQuestionType)
-            .collect(Collectors.toList());
+    private QuestionTypePerformance buildQuestionTypePerformance(List<QuestionAnswer> typeAnswers, String questionType) {
+        int totalQuestions = typeAnswers.size();
+        int correctAnswers = (int) typeAnswers.stream().filter(qa -> qa.getIsCorrect()).count();
+        double accuracyRate = (double) correctAnswers / totalQuestions * 100;
+        double averageTime = typeAnswers.stream()
+            .mapToLong(qa -> qa.getTimeSpent() != null ? qa.getTimeSpent() : 0)
+            .average()
+            .orElse(0.0);
+        
+        return QuestionTypePerformance.builder()
+                .questionType(questionType)
+                .totalQuestions(totalQuestions)
+                .correctAnswers(correctAnswers)
+                .accuracyRate(accuracyRate)
+                .averageTime(averageTime)
+                .build();
     }
 
-    private String determineLearningPattern(double averageTime) {
-        // 시간만 고려한 학습 패턴 분류
-        if (averageTime < 20) {
-            return "FAST_LEARNER"; // 빠른 학습자 (평균 시간 < 20초)
-        } else if (averageTime < 40) {
-            return "MODERATE_LEARNER"; // 보통 속도 학습자 (평균 시간 20-40초)
-        } else if (averageTime < 60) {
-            return "CAREFUL_LEARNER"; // 신중한 학습자 (평균 시간 40-60초)
-        } else {
-            return "SLOW_LEARNER"; // 느린 학습자 (평균 시간 60초+)
+    /**
+     * 전체 학습 분석 결과 생성 - 공통 로직
+     */
+    private LearningPatternAnalysisDTO buildCompleteLearningAnalysis(String userId, LocalDateTime startDate, LocalDateTime endDate,
+                                                                 List<LearningSession> sessions, List<QuestionAnswer> allAnswers,
+                                                                 LearningPatternAnalysisDTO previousAnalysis) {
+        // 전체 기간 통합 결과 생성
+        LearningSessionResult completeResult = LearningSessionResult.builder()
+                .userId(userId)
+                .sessionId(null) // 전체 분석이므로 세션 ID 없음
+                .totalQuestions(allAnswers.size())
+                .correctAnswers((int) allAnswers.stream().filter(qa -> qa.getIsCorrect()).count())
+                .totalDuration(calculateTotalDuration(sessions))
+                .questionAnswers(allAnswers)
+                .build();
+        
+        // 문제 유형별 성과 분석
+        List<QuestionTypePerformance> questionTypePerformances = analyzeQuestionTypePerformanceByUserId(userId, startDate, endDate);
+        
+        // 외부 DTO로 직접 변환하여 반환
+        return LearningPatternAnalysisDTO.builder()
+                .analysisType("COMPLETE_ANALYSIS")
+                .userId(userId)
+                .sessionId(null) // 전체 분석이므로 세션 ID 없음
+                .questionTypePerformances(questionTypePerformances)
+                .reviewRequiredTypes(extractReviewRequiredTypes(questionTypePerformances))
+                .improvementRequiredTypes(extractImprovementRequiredTypes(questionTypePerformances))
+                .strengthTypes(extractStrengthTypes(questionTypePerformances))
+                .recentWrongQuestionIds(extractRecentWrongQuestionIds(allAnswers))
+                .longIntervalTypes(extractLongIntervalTypes(sessions))
+                .slowSolvingTypes(extractSlowSolvingTypes(questionTypePerformances))
+                .overallAccuracyRate(calculateAccuracyRate(completeResult))
+                .averageSolvingTime(calculateAverageSolvingTime(completeResult))
+                .studyFrequency(analyzeLearningFrequency(sessions))
+                .preferredStudyTime(analyzeTimePattern(sessions))
+                .analyzedAt(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * 이전 분석 결과와 새로운 데이터 병합
+     */
+    private LearningPatternAnalysisDTO mergeWithPreviousAnalysis(String userId, LocalDateTime startDate, LocalDateTime endDate,
+                                                            LearningPatternAnalysisDTO previousAnalysis,
+                                                            List<LearningSession> newSessions, List<QuestionAnswer> newAnswers) {
+        // 새로운 데이터만으로 분석 결과 생성
+        LearningSessionResult newResult = LearningSessionResult.builder()
+                .userId(userId)
+                .sessionId(null)
+                .totalQuestions(newAnswers.size())
+                .correctAnswers((int) newAnswers.stream().filter(qa -> qa.getIsCorrect()).count())
+                .totalDuration(calculateTotalDuration(newSessions))
+                .questionAnswers(newAnswers)
+                .build();
+        
+        // 새로운 데이터 분석
+        List<QuestionTypePerformance> newQuestionTypePerformances = analyzeQuestionTypePerformanceCommon(null, userId, startDate, endDate);
+        
+        // 이전 분석 결과와 새로운 데이터 병합
+        List<QuestionTypePerformance> mergedQuestionTypePerformances = mergeQuestionTypePerformances(
+            previousAnalysis.getQuestionTypePerformances(), newQuestionTypePerformances);
+        
+        return LearningPatternAnalysisDTO.builder()
+                .analysisType("COMPLETE_ANALYSIS")
+                .userId(userId)
+                .sessionId(null)
+                .questionTypePerformances(mergedQuestionTypePerformances)
+                .reviewRequiredTypes(extractReviewRequiredTypes(mergedQuestionTypePerformances))
+                .improvementRequiredTypes(extractImprovementRequiredTypes(mergedQuestionTypePerformances))
+                .strengthTypes(extractStrengthTypes(mergedQuestionTypePerformances))
+                .recentWrongQuestionIds(extractRecentWrongQuestionIds(newAnswers))
+                .longIntervalTypes(extractLongIntervalTypes(newSessions))
+                .slowSolvingTypes(extractSlowSolvingTypes(mergedQuestionTypePerformances))
+                .overallAccuracyRate(calculateAccuracyRate(newResult))
+                .averageSolvingTime(calculateAverageSolvingTime(newResult))
+                .studyFrequency(analyzeLearningFrequency(newSessions))
+                .preferredStudyTime(analyzeTimePattern(newSessions))
+                .analyzedAt(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * 문제 유형별 성과 병합
+     */
+    private List<QuestionTypePerformance> mergeQuestionTypePerformances(
+            List<QuestionTypePerformance> previous, List<QuestionTypePerformance> current) {
+        
+        Map<String, QuestionTypePerformance> mergedMap = new HashMap<>();
+        
+        // 이전 데이터 추가
+        for (QuestionTypePerformance prev : previous) {
+            mergedMap.put(prev.getQuestionType(), prev);
         }
-    }
-
-    private String determineOverallLearningPattern(List<QuestionAnswer> answers) {
-        if (answers.isEmpty()) return "NO_DATA";
         
-        long correctCount = answers.stream().filter(QuestionAnswer::getIsCorrect).count();
-        double accuracy = (double) correctCount / answers.size();
-        double avgTime = calculateAverageTime(answers);
-        
-        // 시간과 정답 개수만 고려한 패턴 분류
-        if (accuracy >= 0.8 && avgTime < 30) {
-            return "EXCELLENT"; // 우수한 학습자 (정답률 80%+, 빠른 속도)
-        } else if (accuracy >= 0.8 && avgTime >= 30) {
-            return "ACCURATE_BUT_SLOW"; // 정확하지만 느린 학습자 (정답률 80%+, 느린 속도)
-        } else if (accuracy >= 0.6 && avgTime < 40) {
-            return "GOOD"; // 좋은 학습자 (정답률 60%+, 적당한 속도)
-        } else if (accuracy >= 0.6 && avgTime >= 40) {
-            return "GOOD_BUT_SLOW"; // 좋지만 느린 학습자 (정답률 60%+, 느린 속도)
-        } else if (accuracy >= 0.4) {
-            return "AVERAGE"; // 평균적인 학습자 (정답률 40%+)
-        } else {
-            return "NEEDS_IMPROVEMENT"; // 개선이 필요한 학습자 (정답률 < 40%)
-        }
-    }
-
-    // 최대 연속 정답/오답 계산 메서드들은 제거됨 (시간 중심 분석으로 변경)
-
-    private double calculateConsistencyScore(List<QuestionAnswer> answers) {
-        if (answers.size() < 2) return 100.0;
-        
-        int consistencyBreaks = 0;
-        for (int i = 1; i < answers.size(); i++) {
-            if (answers.get(i).getIsCorrect() != answers.get(i-1).getIsCorrect()) {
-                consistencyBreaks++;
-            }
-        }
-        
-        double consistencyRatio = 1.0 - ((double) consistencyBreaks / (answers.size() - 1));
-        return consistencyRatio * 100;
-    }
-
-    private List<String> recommendReviewQuestions(List<QuestionAnswer> answers) {
-        return answers.stream()
-            .filter(answer -> !answer.getIsCorrect())
-            .map(QuestionAnswer::getQuestionId)
-            .distinct()
-            .limit(5) // 최대 5개 문제 추천
-            .collect(Collectors.toList());
-    }
-
-    private List<String> recommendWeakAreaQuestions(List<QuestionAnswer> answers, List<String> weakCategories) {
-        return answers.stream()
-            .filter(answer -> weakCategories.contains(answer.getMajorCategory()))
-            .map(QuestionAnswer::getQuestionId)
-            .distinct()
-            .limit(3) // 취약 영역당 최대 3개 문제
-            .collect(Collectors.toList());
-    }
-
-    private Map<String, Integer> calculateQuestionPriority(List<QuestionAnswer> answers) {
-        Map<String, Integer> priority = new HashMap<>();
-        
-        for (QuestionAnswer answer : answers) {
-            if (!answer.getIsCorrect()) {
-                priority.put(answer.getQuestionId(), 3); // 오답 문제는 높은 우선순위
-            } else if (answer.getTimeSpent() != null && answer.getTimeSpent() > 60) {
-                priority.put(answer.getQuestionId(), 2); // 오래 걸린 문제는 중간 우선순위
+        // 현재 데이터와 병합
+        for (QuestionTypePerformance curr : current) {
+            QuestionTypePerformance existing = mergedMap.get(curr.getQuestionType());
+            if (existing != null) {
+                // 기존 데이터와 병합
+                QuestionTypePerformance merged = mergeQuestionTypePerformance(existing, curr);
+                mergedMap.put(curr.getQuestionType(), merged);
             } else {
-                priority.put(answer.getQuestionId(), 1); // 정답 문제는 낮은 우선순위
+                // 새로운 문제 유형
+                mergedMap.put(curr.getQuestionType(), curr);
             }
         }
         
-        return priority;
-    }
-
-    private String generateLearningSuggestion(String pattern, double consistency, List<String> weakCategories) {
-        if (pattern.equals("EXCELLENT")) {
-            return "훌륭한 학습 성과입니다! 다음 단계로 넘어가보세요.";
-        } else if (pattern.equals("NEEDS_IMPROVEMENT")) {
-            return "기본 개념을 다시 한번 정리해보세요. 꾸준한 연습이 도움이 될 것입니다.";
-        } else if (consistency < 50) {
-            return "학습 패턴이 일정하지 않습니다. 집중력을 높여보세요.";
-        } else if (!weakCategories.isEmpty()) {
-            return String.format("%s 영역을 집중적으로 학습해보세요.", String.join(", ", weakCategories));
-        } else {
-            return "꾸준한 학습을 통해 실력을 향상시켜보세요.";
-        }
+        return new ArrayList<>(mergedMap.values());
     }
 
     /**
-     * 집중 학습 영역 결정 (3가지 문제 유형 기준)
+     * 개별 문제 유형 성과 병합
      */
-    private List<String> determineFocusAreas(List<String> weakQuestionTypes, List<QuestionTypePerformance> questionTypePerformances) {
-        List<String> focusAreas = new ArrayList<>(weakQuestionTypes);
+    private QuestionTypePerformance mergeQuestionTypePerformance(QuestionTypePerformance previous, QuestionTypePerformance current) {
+        int totalQuestions = previous.getTotalQuestions() + current.getTotalQuestions();
+        int totalCorrectAnswers = previous.getCorrectAnswers() + current.getCorrectAnswers();
+        double accuracyRate = totalQuestions > 0 ? (double) totalCorrectAnswers / totalQuestions * 100 : 0.0;
         
-        // 정답률이 70-80%인 문제 유형도 추가 (약간 부족한 영역)
-        for (QuestionTypePerformance performance : questionTypePerformances) {
-            if (performance.getAccuracy() >= 0.7 && performance.getAccuracy() < 0.8) {
-                focusAreas.add(performance.getQuestionType());
-            }
-        }
+        // 평균 시간은 가중 평균으로 계산
+        double avgTime = (previous.getTotalQuestions() * previous.getAverageTime() + 
+                         current.getTotalQuestions() * current.getAverageTime()) / totalQuestions;
         
-        return focusAreas.stream().distinct().collect(Collectors.toList());
+        return QuestionTypePerformance.builder()
+                .questionType(previous.getQuestionType())
+                .totalQuestions(totalQuestions)
+                .correctAnswers(totalCorrectAnswers)
+                .accuracyRate(accuracyRate)
+                .averageTime(avgTime)
+                .build();
     }
-
-    private int estimateReviewTime(int wrongQuestionsCount, double averageTime) {
-        // 오답 문제당 평균 시간의 1.5배 + 추가 학습 시간
-        int baseTime = (int) (wrongQuestionsCount * averageTime * 1.5);
-        int additionalTime = wrongQuestionsCount * 2; // 문제당 2분 추가
-        return Math.max(10, baseTime + additionalTime); // 최소 10분
-    }
-
-    // ===== 내부 DTO 클래스들 =====
 
     /**
-     * 문제 유형별 성과 데이터 (타입 안전한 구조)
+     * 이전 분석 결과 조회
      */
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class QuestionTypePerformance {
-        private String questionType; // 문제 유형
-        private int totalQuestions; // 총 문제 수
-        private int correctAnswers; // 정답 수
-        private double accuracy; // 정답률
-        private boolean isWeakArea; // 취약 영역 여부
-        private double averageTime; // 평균 시간
-        private int difficulty; // 난이도
+    private List<LearningPatternAnalysisDTO> findPreviousAnalyses(String userId, LocalDateTime startDate, LocalDateTime endDate) {
+        // 실제 구현에서는 LearningPatternAnalysisRepository를 통해 조회
+        // 현재는 빈 리스트 반환 (구현 필요)
+        return new ArrayList<>();
+    }
+
+    /**
+     * 세션들의 총 학습 시간을 계산 (초 단위)
+     * startedAt과 completedAt을 이용하여 실제 학습 시간 계산
+     */
+    private long calculateTotalDuration(List<LearningSession> sessions) {
+        return sessions.stream()
+                .mapToLong(s -> calculateSessionDuration(s))
+                .sum();
+    }
+
+    /**
+     * 개별 세션의 학습 시간을 계산 (초 단위)
+     * completedAt이 null이면 0 반환 (완료되지 않은 세션)
+     */
+    private long calculateSessionDuration(LearningSession session) {
+        if (session.getStartedAt() == null || session.getCompletedAt() == null) {
+            return 0L;
+        }
         
+        // Duration을 이용하여 초 단위로 계산
+        return java.time.Duration.between(session.getStartedAt(), session.getCompletedAt()).getSeconds();
     }
 
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class LearningProgressAnalysis {
-        private String sessionId; // 세션 ID
-        private String userId; // 사용자 ID
-        private String questionId; // 문제 ID
-        private Boolean isCorrect; // 정답 여부
-        private Integer timeSpent; // 걸린 시간
-        private Integer currentQuestionNumber; // 현재 문제 번호
-        private Integer totalQuestions; // 총 문제 수
-        private Integer answeredQuestions;
-        private Integer correctAnswers;
-        private Integer wrongAnswers;
-        private Double progressPercentage;
-        private Double averageTimePerQuestion;
-        private String learningPattern;
+    // === 외부 DTO 생성을 위한 헬퍼 메서드들 ===
+
+    private List<String> extractReviewRequiredTypes(List<QuestionTypePerformance> performances) {
+        return performances.stream()
+                .filter(p -> p.getAccuracyRate() < 60.0)
+                .map(QuestionTypePerformance::getQuestionType)
+                .collect(Collectors.toList());
     }
 
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class LearningPatternInfo {
-        private Double averageTimePerQuestion;
-        private String learningPattern;
-        private String detailedPattern; // FAST_LEARNER, MODERATE_LEARNER 등
+    private List<String> extractImprovementRequiredTypes(List<QuestionTypePerformance> performances) {
+        return performances.stream()
+                .filter(p -> p.getAccuracyRate() >= 60.0 && p.getAccuracyRate() < 80.0)
+                .map(QuestionTypePerformance::getQuestionType)
+                .collect(Collectors.toList());
     }
 
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class CompleteLearningAnalysis {
-        private String sessionId;
+    private List<String> extractStrengthTypes(List<QuestionTypePerformance> performances) {
+        return performances.stream()
+                .filter(p -> p.getAccuracyRate() >= 80.0)
+                .map(QuestionTypePerformance::getQuestionType)
+                .collect(Collectors.toList());
+    }
+
+    private List<String> extractRecentWrongQuestionIds(List<QuestionAnswer> answers) {
+        // 최근 2주 내 오답한 문제 ID들 반환
+        LocalDateTime twoWeeksAgo = LocalDateTime.now().minusWeeks(2);
+        return answers.stream()
+                .filter(qa -> !qa.getIsCorrect() && qa.getAnsweredAt().isAfter(twoWeeksAgo))
+                .map(QuestionAnswer::getQuestionId)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private List<String> extractLongIntervalTypes(List<LearningSession> sessions) {
+        // 오래 전에 학습한 문제 유형들 반환 (간단한 구현)
+        return Arrays.asList("VOCABULARY"); // 임시로 고정값 반환
+    }
+
+    private List<String> extractSlowSolvingTypes(List<QuestionTypePerformance> performances) {
+        // 풀이 시간이 긴 문제 유형들 반환 (간단한 구현)
+        return performances.stream()
+                .filter(p -> p.getAverageTime() > 60.0) // 60초 이상
+                .map(QuestionTypePerformance::getQuestionType)
+                .collect(Collectors.toList());
+    }
+
+    // === 헬퍼 메서드들 ===
+
+    private double calculateAccuracyRate(LearningSessionResult result) {
+        return result.getTotalQuestions() > 0 ? 
+            (double) result.getCorrectAnswers() / result.getTotalQuestions() * 100 : 0.0;
+    }
+
+    private double calculateAverageSolvingTime(LearningSessionResult result) {
+        return result.getTotalQuestions() > 0 ? 
+            (double) result.getTotalDuration() / result.getTotalQuestions() : 0.0;
+    }
+
+    private String analyzeLearningFrequency(List<LearningSession> sessions) {
+        if (sessions.size() < 2) return "INSUFFICIENT_DATA";
+        
+        // 세션 간격 분석
+        return "REGULAR"; // 간단한 구현
+    }
+
+    private String analyzeTimePattern(List<LearningSession> sessions) {
+        if (sessions.isEmpty()) return "UNKNOWN";
+        
+        // 시간대별 패턴 분석
+        return "MIXED"; // 간단한 구현
+    }
+
+    // === 내부 DTO 클래스 - 외부 DTO 생성을 위해 필요 ===
+
+    /**
+     * 학습 세션 결과 데이터를 담는 DTO
+     * 개별 세션과 전체 학습 분석에서 공통으로 사용하는 입력 데이터
+     */
+    public static class LearningSessionResult {
         private String userId;
-        private Long totalDuration;
-        private Double averageTimePerQuestion;
-        private List<String> wrongQuestionIds;
-        private List<String> weakQuestionTypes; // 일관된 명명
-        private List<QuestionTypePerformance> questionTypePerformances; // 타입 안전한 구조
-        private String overallLearningPattern;
-        private Double consistencyScore;
-        private List<String> recommendedReviewQuestions;
-        private String learningSuggestion;
-        private List<String> focusAreas;
-        private Integer estimatedReviewTime;
+        private String sessionId; // 전체 분석의 경우 null
+        private int totalQuestions;
+        private int correctAnswers;
+        private long totalDuration;
+        private List<QuestionAnswer> questionAnswers;
+
+        public static LearningSessionResultBuilder builder() {
+            return new LearningSessionResultBuilder();
+        }
+
+        public static class LearningSessionResultBuilder {
+            private LearningSessionResult result = new LearningSessionResult();
+
+            public LearningSessionResultBuilder userId(String userId) {
+                result.userId = userId;
+                return this;
+            }
+
+            public LearningSessionResultBuilder sessionId(String sessionId) {
+                result.sessionId = sessionId;
+                return this;
+            }
+
+            public LearningSessionResultBuilder totalQuestions(int totalQuestions) {
+                result.totalQuestions = totalQuestions;
+                return this;
+            }
+
+            public LearningSessionResultBuilder correctAnswers(int correctAnswers) {
+                result.correctAnswers = correctAnswers;
+                return this;
+            }
+
+            public LearningSessionResultBuilder totalDuration(long totalDuration) {
+                result.totalDuration = totalDuration;
+                return this;
+            }
+
+            public LearningSessionResultBuilder questionAnswers(List<QuestionAnswer> questionAnswers) {
+                result.questionAnswers = questionAnswers;
+                return this;
+            }
+
+            public LearningSessionResult build() {
+                return result;
+            }
+        }
+
+        // Getter 메서드들
+        public String getUserId() { return userId; }
+        public String getSessionId() { return sessionId; }
+        public int getTotalQuestions() { return totalQuestions; }
+        public int getCorrectAnswers() { return correctAnswers; }
+        public long getTotalDuration() { return totalDuration; }
+        public List<QuestionAnswer> getQuestionAnswers() { return questionAnswers; }
     }
 }

@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
-@Table(name = "questions")
+@Table(name = "question")
 @Data
 @Builder
 @NoArgsConstructor
@@ -24,6 +24,9 @@ public class Question {
 
     @Column(nullable = false)
     private String optionA; // 선택지 A
+
+    @Column(nullable = false)
+    private Integer difficultyLevel = 1; // 난이도 (1: 초급, 2: 중급, 3: 상급)
 
     @Column(nullable = false)
     private String optionB; // 선택지 B
@@ -50,26 +53,18 @@ public class Question {
     private String explanation; // 해설
 
     @Column(nullable = false)
-    private Integer difficulty = 1; // 난이도 (1: 쉬움, 2: 보통, 3: 어려움)
-
-    @Column(nullable = false)
-    private Integer pointsPerQuestion = 10; // 문제당 점수
-
-    @Column
-    private String tags; // 태그 (쉼표로 구분)
-
-    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-    // ===== 연관 관계 =====
-    @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<SessionQuestion> sessionQuestions;
+    // ===== 연관 관계 제거 (성능 및 매핑 충돌 방지) =====
+    // 필요시 Repository를 통해 개별 조회
+    // @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    // private List<SessionQuestion> sessionQuestions;
 
-    @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<QuestionAnswer> questionAnswers;
+    // @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    // private List<QuestionAnswer> questionAnswers;
 
     // ===== 편의 메서드들 =====
 
@@ -77,13 +72,13 @@ public class Question {
      * 문제 난이도 레벨 반환
      */
     public String getDifficultyLevel() {
-        switch (this.difficulty) {
+        switch (this.difficultyLevel) {
             case 1:
-                return "쉬움";
+                return "초급";
             case 2:
-                return "보통";
+                return "중급";
             case 3:
-                return "어려움";
+                return "상급";
             default:
                 return "알 수 없음";
         }
@@ -118,32 +113,16 @@ public class Question {
      * 문제가 특정 난이도인지 확인
      */
     public boolean isDifficulty(int difficulty) {
-        return this.difficulty == difficulty;
+        return this.difficultyLevel == difficulty;
     }
 
     /**
      * 문제가 특정 난이도 범위에 속하는지 확인
      */
     public boolean isDifficultyRange(int minDifficulty, int maxDifficulty) {
-        return this.difficulty >= minDifficulty && this.difficulty <= maxDifficulty;
+        return this.difficultyLevel >= minDifficulty && this.difficultyLevel <= maxDifficulty;
     }
 
-    /**
-     * 문제 태그 목록 반환
-     */
-    public List<String> getTagList() {
-        if (this.tags == null || this.tags.trim().isEmpty()) {
-            return List.of();
-        }
-        return List.of(this.tags.split(","));
-    }
-
-    /**
-     * 문제에 특정 태그가 포함되어 있는지 확인
-     */
-    public boolean hasTag(String tag) {
-        return getTagList().contains(tag.trim());
-    }
 
     /**
      * 문제 생성 시간으로부터 경과 시간 계산 (일)

@@ -51,7 +51,7 @@ public class RedisCacheService {
         String key = RedisCacheConfig.CacheKeyBuilder.sessionKey(sessionId);
         try {
             Object cached = redisTemplate.opsForValue().get(key);
-            if (cached != null) {
+            if (cached != null && clazz.isInstance(cached)) {
                 return Optional.of(clazz.cast(cached));
             }
         } catch (Exception e) {
@@ -109,9 +109,14 @@ public class RedisCacheService {
         String key = RedisCacheConfig.CacheKeyBuilder.sessionQuestionsKey(sessionId);
         try {
             Object cached = redisTemplate.opsForValue().get(key);
-            if (cached != null) {
+            if (cached instanceof List) {
                 @SuppressWarnings("unchecked")
-                List<String> questionIds = (List<String>) cached;
+                List<?> rawList = (List<?>) cached;
+                // String 타입 검증
+                List<String> questionIds = rawList.stream()
+                    .filter(item -> item instanceof String)
+                    .map(String.class::cast)
+                    .toList();
                 return Optional.of(questionIds);
             }
         } catch (Exception e) {
@@ -247,6 +252,7 @@ public class RedisCacheService {
         try {
             Object cached = redisTemplate.opsForValue().get(key);
             if (cached instanceof List) {
+                @SuppressWarnings("unchecked")
                 List<?> list = (List<?>) cached;
                 List<T> typedList = list.stream()
                     .filter(item -> clazz.isInstance(item))
@@ -282,7 +288,7 @@ public class RedisCacheService {
         String key = RedisCacheConfig.CacheKeyBuilder.tempKey(type, id);
         try {
             Object cached = redisTemplate.opsForValue().get(key);
-            if (cached != null) {
+            if (cached != null && clazz.isInstance(cached)) {
                 return Optional.of(clazz.cast(cached));
             }
         } catch (Exception e) {
@@ -415,7 +421,7 @@ public class RedisCacheService {
         String key = RedisCacheConfig.CacheKeyBuilder.userCurrentSessionKey(userId);
         try {
             Object cached = redisTemplate.opsForValue().get(key);
-            if (cached != null) {
+            if (cached != null && clazz.isInstance(cached)) {
                 return Optional.of(clazz.cast(cached));
             }
         } catch (Exception e) {
@@ -464,7 +470,7 @@ public class RedisCacheService {
                 List<T> events = new ArrayList<>();
                 for (String key : keys) {
                     Object cached = redisTemplate.opsForValue().get(key);
-                    if (cached != null) {
+                    if (cached != null && clazz.isInstance(cached)) {
                         events.add(clazz.cast(cached));
                     }
                 }

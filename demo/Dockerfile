@@ -26,7 +26,7 @@ FROM eclipse-temurin:17-jre AS production
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
-    netcat \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # 보안을 위한 non-root 사용자 생성

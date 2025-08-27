@@ -19,15 +19,6 @@ public interface LearningSessionEventRepository extends JpaRepository<LearningSe
     // 사용자 ID로 이벤트 목록 조회
     List<LearningSessionEvent> findByUserIdOrderByCreatedAtDesc(String userId);
     
-    // 이벤트 상태별 조회
-    List<LearningSessionEvent> findByEventStatusOrderByCreatedAtAsc(String eventStatus);
-    
-    // 발행 대기 중인 이벤트 조회 (재처리용)
-    List<LearningSessionEvent> findByEventStatusAndCreatedAtBefore(String eventStatus, LocalDateTime before);
-    
-    // 발행 실패한 이벤트 조회 (재처리용)
-    List<LearningSessionEvent> findByEventStatusAndPublishErrorIsNotNull(String eventStatus);
-    
     // 특정 기간 동안의 이벤트 조회
     @Query("SELECT e FROM LearningSessionEvent e WHERE e.createdAt BETWEEN :startDate AND :endDate ORDER BY e.createdAt DESC")
     List<LearningSessionEvent> findByCreatedAtBetween(@Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
@@ -36,26 +27,18 @@ public interface LearningSessionEventRepository extends JpaRepository<LearningSe
     @Query("SELECT e FROM LearningSessionEvent e WHERE e.userId = :userId AND e.eventType = 'SESSION_COMPLETED' ORDER BY e.createdAt DESC")
     List<LearningSessionEvent> findRecentCompletedSessionsByUserId(@Param("userId") String userId);
     
-    // 카테고리별 성과 분석을 위한 이벤트 조회
-    @Query("SELECT e FROM LearningSessionEvent e WHERE e.userId = :userId AND e.eventType = 'SESSION_COMPLETED' AND e.categoryAccuracy LIKE %:category% ORDER BY e.createdAt DESC")
-    List<LearningSessionEvent> findByUserIdAndCategory(@Param("userId") String userId, @Param("category") String category);
+    // 카테고리별 성과 분석을 위한 이벤트 조회 (categoryAccuracy 필드가 없으므로 주석 처리)
+    // @Query("SELECT e FROM LearningSessionEvent e WHERE e.userId = :userId AND e.eventType = 'SESSION_COMPLETED' AND e.categoryAccuracy LIKE %:category% ORDER BY e.createdAt DESC")
+    // List<LearningSessionEvent> findByUserIdAndCategory(@Param("userId") String userId, @Param("category") String category);
     
-    // 학습 패턴별 이벤트 조회
-    List<LearningSessionEvent> findByUserIdAndLearningPatternOrderByCreatedAtDesc(String userId, String learningPattern);
+    // 학습 패턴별 이벤트 조회 (learningPattern 필드가 없으므로 주석 처리)
+    // List<LearningSessionEvent> findByUserIdAndLearningPatternOrderByCreatedAtDesc(String userId, String learningPattern);
     
-    // 점수 범위별 이벤트 조회
-    @Query("SELECT e FROM LearningSessionEvent e WHERE e.userId = :userId AND e.score BETWEEN :minScore AND :maxScore ORDER BY e.createdAt DESC")
-    List<LearningSessionEvent> findByUserIdAndScoreRange(@Param("userId") String userId, @Param("minScore") Integer minScore, @Param("maxScore") Integer maxScore);
+    // 점수 범위별 이벤트 조회 (score 필드가 없으므로 주석 처리)
+    // @Query("SELECT e FROM LearningSessionEvent e WHERE e.userId = :userId AND e.score BETWEEN :minScore AND :maxScore ORDER BY e.createdAt DESC")
+    // List<LearningSessionEvent> findByUserIdAndScoreRange(@Param("userId") String userId, @Param("minScore") Integer minScore, @Param("maxScore") Integer maxScore);
     
-    // 특정 세션 타입의 완료 이벤트 조회
-    @Query("SELECT e FROM LearningSessionEvent e JOIN e.learningSession ls WHERE ls.sessionType = :sessionType AND e.eventType = 'SESSION_COMPLETED' ORDER BY e.createdAt DESC")
-    List<LearningSessionEvent> findBySessionType(@Param("sessionType") String sessionType);
-    
-    // 이벤트 발행 상태 통계
-    @Query("SELECT e.eventStatus, COUNT(e) FROM LearningSessionEvent e GROUP BY e.eventStatus")
-    List<Object[]> countByEventStatus();
-    
-    // 사용자별 이벤트 발행 성공률
-    @Query("SELECT e.userId, COUNT(e) as total, SUM(CASE WHEN e.eventStatus = 'PUBLISHED' THEN 1 ELSE 0 END) as published FROM LearningSessionEvent e GROUP BY e.userId")
-    List<Object[]> getUserEventPublishRate();
+    // 특정 세션 타입의 완료 이벤트 조회 (관계 매핑이 없으므로 주석 처리)
+    // @Query("SELECT e FROM LearningSessionEvent e JOIN e.learningSession ls WHERE ls.sessionType = :sessionType AND e.eventType = 'SESSION_COMPLETED' ORDER BY e.createdAt DESC")
+    // List<LearningSessionEvent> findBySessionType(@Param("sessionType") String sessionType);
 }

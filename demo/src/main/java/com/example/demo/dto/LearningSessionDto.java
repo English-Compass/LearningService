@@ -46,7 +46,7 @@ public class LearningSessionDto {
         private Integer answeredQuestions;
         private Integer correctAnswers;       // 추가
         private Integer wrongAnswers;         // 추가
-        private Integer score;                // 점수 추가
+        private Double score;                 // 점수 추가
         private Double progressPercentage;
         private LocalDateTime startedAt;      // 추가
         private LocalDateTime lastUpdatedAt;  // 추가
@@ -84,7 +84,7 @@ public class LearningSessionDto {
         private Integer answeredQuestions;
         private Integer correctAnswers;
         private Integer wrongAnswers;
-        private Integer score;
+        private Double score;
         
         // 시간 통계
         private LocalDateTime startedAt;
@@ -110,11 +110,12 @@ public class LearningSessionDto {
     public static class SessionListResponse {
         private String sessionId;
         private String learningItemId;
+        private String sessionType;  // sessionType 필드 추가
         private LocalDateTime startedAt;
         private LocalDateTime completedAt;
         private Integer totalQuestions;
         private Integer answeredQuestions;
-        private Integer score;
+        private Double score;
         private LearningSession.SessionStatus status;
         private Double progressPercentage;
         private Double accuracyPercentage;

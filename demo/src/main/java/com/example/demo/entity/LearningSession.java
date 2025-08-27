@@ -40,6 +40,12 @@ public class LearningSession {
 
     @Column(columnDefinition = "TEXT")
     private String sessionMetadata; // 세션 메타데이터 (JSON)
+    
+    @Column
+    private Double progressPercentage; // 진행률 (%)
+    
+    @Column
+    private LocalDateTime startedAt; // 세션 시작 시간
 
     public enum SessionType {
         PRACTICE("문제 세션"),
@@ -60,9 +66,7 @@ public class LearningSession {
     public enum SessionStatus {
         STARTED,        // 세션 시작
         IN_PROGRESS,    // 진행 중
-        PAUSED,         // 일시정지
-        COMPLETED,      // 완료
-        ABANDONED       // 중단
+        COMPLETED       // 완료
     }
 
     // 세션 시작 처리
@@ -84,15 +88,12 @@ public class LearningSession {
         this.status = SessionStatus.COMPLETED;
         this.updatedAt = LocalDateTime.now();
     }
+    
 
-    // 세션 중단 처리
-    public void abandonSession() {
-        this.status = SessionStatus.ABANDONED;
+    // 세션 시작 시간 설정
+    public void setStartedAt(LocalDateTime startedAt) {
+        this.startedAt = startedAt;
         this.updatedAt = LocalDateTime.now();
     }
 
-    // 세션 업데이트 시간 갱신
-    public void updateTimestamp() {
-        this.updatedAt = LocalDateTime.now();
-    }
 }

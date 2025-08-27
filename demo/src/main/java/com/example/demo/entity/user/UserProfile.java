@@ -30,12 +30,6 @@ public class UserProfile {
     @Enumerated(EnumType.STRING)
     private LearningPurpose learningPurpose; // 학습 목적 (대분류)
 
-    @Column(name = "business_domain")
-    private String businessDomain; // 비즈니스 도메인 (IT, 금융, 의료 등)
-
-    @Column(name = "language_goal")
-    private String languageGoal; // 언어 학습 목표 (비즈니스 영어, 일상 회화 등)
-
     @ElementCollection
     @CollectionTable(name = "user_interests", joinColumns = @JoinColumn(name = "user_id"))
     @Column(name = "interest")
