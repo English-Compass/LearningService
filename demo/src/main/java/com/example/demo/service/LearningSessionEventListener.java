@@ -29,9 +29,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * 세션 완료 시 학습 결과를 분석하고 패턴 분석 결과를 데이터베이스에 저장
  * 분석 완료 후 다른 서비스들이 구독할 수 있는 이벤트를 발행
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class LearningSessionEventListener {
 
     private final LearningSessionRepository sessionRepository;

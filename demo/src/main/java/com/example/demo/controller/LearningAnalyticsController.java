@@ -1,6 +1,10 @@
 package com.example.demo.controller;
 
-import com.example.demo.dto.analytics.*;
+import com.example.demo.dto.analytics.PerformanceCard;
+import com.example.demo.dto.analytics.WeeklyTrendData;
+import com.example.demo.dto.analytics.DailyActivityData;
+import com.example.demo.dto.analytics.QuestionTypeChartData;
+import com.example.demo.dto.analytics.LearningPatternAnalysisDTO;
 import com.example.demo.entity.LearningSession;
 import com.example.demo.entity.LearningSessionEvent;
 import com.example.demo.entity.QuestionAnswer;
@@ -20,6 +24,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Collections;
+import java.util.Map;
 
 /**
  * 학습 분석 데이터 조회 전용 컨트롤러
@@ -28,10 +33,10 @@ import java.util.Collections;
  * - 데이터베이스에서 직접 조회하여 통계 데이터 제공
  * - 세션 생성/수정 기능은 제외
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/learning-analytics")
 @RequiredArgsConstructor
-@Slf4j
 public class LearningAnalyticsController {
 
     private final LearningAnalyticsService learningAnalyticsService;
@@ -179,6 +184,100 @@ public class LearningAnalyticsController {
     }
 
     // ===== 대시보드 통계 API =====
+
+    /**
+     * 사용자 학습 분석 데이터 조회 (뷰 기반)
+     * user_learning_analytics 뷰에서 직접 조회하여 빠른 응답
+     * GET /api/learning-analytics/users/{userId}/analytics
+     */
+    @GetMapping("/users/{userId}/analytics")
+    public ResponseEntity<Map<String, Object>> getUserAnalytics(@PathVariable String userId) {
+        log.info("사용자 학습 분석 데이터 조회: userId={}", userId);
+        
+        try {
+            Map<String, Object> analytics = learningAnalyticsService.getUserLearningAnalytics(userId);
+            return ResponseEntity.ok(analytics);
+        } catch (Exception e) {
+            log.error("사용자 학습 분석 데이터 조회 중 오류 발생: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 카테고리별 성과 데이터 조회 (뷰 기반)
+     * category_performance_view 뷰에서 직접 조회
+     * GET /api/learning-analytics/users/{userId}/category-performance
+     */
+    @GetMapping("/users/{userId}/category-performance")
+    public ResponseEntity<List<Map<String, Object>>> getCategoryPerformance(@PathVariable String userId) {
+        log.info("카테고리별 성과 데이터 조회: userId={}", userId);
+        
+        try {
+            List<Map<String, Object>> categoryPerformance = learningAnalyticsService.getCategoryPerformance(userId);
+            return ResponseEntity.ok(categoryPerformance);
+        } catch (Exception e) {
+            log.error("카테고리별 성과 데이터 조회 중 오류 발생: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 난이도별 성취도 데이터 조회 (뷰 기반)
+     * difficulty_achievement_view 뷰에서 직접 조회
+     * GET /api/learning-analytics/users/{userId}/difficulty-achievement
+     */
+    @GetMapping("/users/{userId}/difficulty-achievement")
+    public ResponseEntity<List<Map<String, Object>>> getDifficultyAchievement(@PathVariable String userId) {
+        log.info("난이도별 성취도 데이터 조회: userId={}", userId);
+        
+        try {
+            List<Map<String, Object>> difficultyAchievement = learningAnalyticsService.getDifficultyAchievement(userId);
+            return ResponseEntity.ok(difficultyAchievement);
+        } catch (Exception e) {
+            log.error("난이도별 성취도 데이터 조회 중 오류 발생: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 문제 통계 데이터 조회 (뷰 기반)
+     * question_stats_view 뷰에서 직접 조회
+     * GET /api/learning-analytics/question-stats
+     */
+    @GetMapping("/question-stats")
+    public ResponseEntity<List<Map<String, Object>>> getQuestionStats() {
+        log.info("문제 통계 데이터 조회");
+        
+        try {
+            List<Map<String, Object>> questionStats = learningAnalyticsService.getQuestionStats();
+            return ResponseEntity.ok(questionStats);
+        } catch (Exception e) {
+            log.error("문제 통계 데이터 조회 중 오류 발생", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 저장된 학습 패턴 분석 결과 조회
+     * learning_pattern_analysis 테이블에서 조회
+     * GET /api/learning-analytics/users/{userId}/stored-pattern/{analysisType}
+     */
+    @GetMapping("/users/{userId}/stored-pattern/{analysisType}")
+    public ResponseEntity<Map<String, Object>> getStoredLearningPattern(
+            @PathVariable String userId,
+            @PathVariable String analysisType) {
+        log.info("저장된 학습 패턴 분석 결과 조회: userId={}, analysisType={}", userId, analysisType);
+        
+        try {
+            Map<String, Object> patternAnalysis = learningAnalyticsService.getStoredLearningPattern(userId, analysisType);
+            return ResponseEntity.ok(patternAnalysis);
+        } catch (Exception e) {
+            log.error("저장된 학습 패턴 분석 결과 조회 중 오류 발생: userId={}, analysisType={}", userId, analysisType, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    // ===== 기존 API 엔드포인트들 =====
 
     /**
      * 학습 성과 카드 데이터 조회 (대시보드 상단 요약 카드용)

@@ -73,4 +73,15 @@ public interface LearningPatternAnalysisRepository extends JpaRepository<Learnin
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate
     );
+
+    /**
+     * 특정 세션에 대한 학습 패턴 분석 결과 조회
+     */
+    Optional<LearningPatternAnalysis> findByUserIdAndSessionId(String userId, String sessionId);
+
+    /**
+     * 사용자의 최근 학습 패턴 분석 결과 조회
+     */
+    @Query("SELECT lpa FROM LearningPatternAnalysis lpa WHERE lpa.userId = :userId ORDER BY lpa.analyzedAt DESC")
+    List<LearningPatternAnalysis> findRecentByUserId(@Param("userId") String userId);
 }

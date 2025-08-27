@@ -4,14 +4,13 @@
 -- 목적: 학습 통계 지표 테스트를 위한 더미 데이터 생성
 -- =====================================================
 
--- 기존 데이터 삭제 (의존성 순서 고려)
-DELETE FROM question_answer;
-DELETE FROM session_question;
-DELETE FROM learning_sessions;
-DELETE FROM question;
+
 
 -- =====================================================
 -- 1. 문제 데이터 삽입 (Question)
+-- DDL 스키마 컬럼 순서: question_id, question_text, option_a, option_b, option_c, 
+--          correct_answer, major_category, minor_category, question_type, explanation, 
+--          difficulty_level, created_at, updated_at
 -- =====================================================
 
 -- 비즈니스 영어 - 회의/컨퍼런스 문제들
@@ -82,39 +81,34 @@ INSERT INTO question VALUES
 
 -- =====================================================
 -- 2. 학습 세션 데이터 삽입 (LearningSession)
+-- DDL 스키마 컬럼 순서: session_id, user_id, created_at, started_at, completed_at, 
+--          updated_at, status, session_type, session_metadata
 -- =====================================================
 
 INSERT INTO learning_sessions VALUES
 -- 사용자 user001의 세션들
-('SESSION001', 'user001', '2024-01-15 09:00:00', '2024-01-15 09:05:00', '2024-01-15 09:25:00', NOW(),
- 'COMPLETED', 'PRACTICE', '{"targetCategory": "BUSINESS", "difficulty": 1}', 
- 5, 5, 4, 1, 100.0),
+('SESSION001', 'user001', NOW(), '2024-01-15 09:00:00', '2024-01-15 09:25:00', NOW(),
+ 'COMPLETED', 'PRACTICE', '{"targetCategory": "BUSINESS", "difficulty": 1}'),
 
-('SESSION002', 'user001', '2024-01-16 14:00:00', '2024-01-16 14:02:00', '2024-01-16 14:18:00', NOW(),
- 'COMPLETED', 'REVIEW', '{"reviewType": "WRONG_ANSWERS"}', 
- 3, 3, 2, 1, 100.0),
+('SESSION002', 'user001', NOW(), '2024-01-16 14:00:00', '2024-01-16 14:18:00', NOW(),
+ 'COMPLETED', 'REVIEW', '{"reviewType": "WRONG_ANSWERS"}'),
 
-('SESSION003', 'user001', '2024-01-17 10:00:00', '2024-01-17 10:03:00', NULL, NOW(),
- 'IN_PROGRESS', 'PRACTICE', '{"targetCategory": "STUDY", "difficulty": 2}', 
- 4, 2, 1, 1, 50.0),
+('SESSION003', 'user001', NOW(), '2024-01-17 10:00:00', NULL, NOW(),
+ 'IN_PROGRESS', 'PRACTICE', '{"targetCategory": "STUDY", "difficulty": 2}'),
 
 -- 사용자 user002의 세션들
-('SESSION004', 'user002', '2024-01-15 11:00:00', '2024-01-15 11:02:00', '2024-01-15 11:30:00', NOW(),
- 'COMPLETED', 'PRACTICE', '{"targetCategory": "BUSINESS", "difficulty": 2}', 
- 5, 5, 3, 2, 100.0),
+('SESSION004', 'user002', NOW(), '2024-01-15 11:00:00', '2024-01-15 11:30:00', NOW(),
+ 'COMPLETED', 'PRACTICE', '{"targetCategory": "BUSINESS", "difficulty": 2}'),
 
-('SESSION005', 'user002', '2024-01-16 16:00:00', '2024-01-16 16:01:00', '2024-01-16 16:15:00', NOW(),
- 'COMPLETED', 'WRONG_ANSWER', '{"focusArea": "GRAMMAR"}', 
- 3, 3, 3, 0, 100.0),
+('SESSION005', 'user002', NOW(), '2024-01-16 16:00:00', '2024-01-16 16:15:00', NOW(),
+ 'COMPLETED', 'WRONG_ANSWER', '{"focusArea": "GRAMMAR"}'),
 
 -- 사용자 user003의 세션들  
-('SESSION006', 'user003', '2024-01-14 13:00:00', '2024-01-14 13:01:00', '2024-01-14 13:40:00', NOW(),
- 'COMPLETED', 'PRACTICE', '{"targetCategory": "STUDY", "difficulty": 1}', 
- 6, 6, 2, 4, 100.0),
+('SESSION006', 'user003', NOW(), '2024-01-14 13:00:00', '2024-01-14 13:40:00', NOW(),
+ 'COMPLETED', 'PRACTICE', '{"targetCategory": "STUDY", "difficulty": 1}'),
 
-('SESSION007', 'user003', '2024-01-17 15:00:00', '2024-01-17 15:02:00', NULL, NOW(),
- 'IN_PROGRESS', 'REVIEW', '{"reviewType": "VOCABULARY"}', 
- 4, 1, 0, 1, 25.0);
+('SESSION007', 'user003', NOW(), '2024-01-17 15:00:00', NULL, NOW(),
+ 'IN_PROGRESS', 'REVIEW', '{"reviewType": "VOCABULARY"}');
 
 -- =====================================================
 -- 3. 세션-문제 연결 데이터 삽입 (SessionQuestion)
@@ -216,17 +210,14 @@ INSERT INTO question_answer (session_id, question_id, session_type, user_answer,
 
 -- 추가 세션들 삽입
 INSERT INTO learning_sessions VALUES
-('SESSION008', 'user004', '2024-01-18 09:00:00', '2024-01-18 09:02:00', '2024-01-18 09:20:00', NOW(),
- 'COMPLETED', 'PRACTICE', '{"targetCategory": "BUSINESS", "difficulty": 3}', 
- 4, 4, 3, 1, 100.0),
+('SESSION008', 'user004', NOW(), '2024-01-18 09:00:00', '2024-01-18 09:20:00', NOW(),
+ 'COMPLETED', 'PRACTICE', '{"targetCategory": "BUSINESS", "difficulty": 3}'),
 
-('SESSION009', 'user005', '2024-01-18 11:00:00', '2024-01-18 11:01:00', '2024-01-18 11:25:00', NOW(),
- 'COMPLETED', 'PRACTICE', '{"targetCategory": "STUDY", "difficulty": 1}', 
- 5, 5, 5, 0, 100.0),
+('SESSION009', 'user005', NOW(), '2024-01-18 11:00:00', '2024-01-18 11:25:00', NOW(),
+ 'COMPLETED', 'PRACTICE', '{"targetCategory": "STUDY", "difficulty": 1}'),
 
-('SESSION010', 'user006', '2024-01-18 14:00:00', '2024-01-18 14:03:00', '2024-01-18 14:35:00', NOW(),
- 'COMPLETED', 'REVIEW', '{"reviewType": "MIXED"}', 
- 6, 6, 1, 5, 100.0);
+('SESSION010', 'user006', NOW(), '2024-01-18 14:00:00', '2024-01-18 14:35:00', NOW(),
+ 'COMPLETED', 'REVIEW', '{"reviewType": "MIXED"}');
 
 -- 추가 세션-문제 연결
 INSERT INTO session_question (session_id, question_id, question_order) VALUES
@@ -299,7 +290,7 @@ INSERT INTO learning_session_events (event_id, session_id, user_id, event_type, 
 ('EVT018', 'SESSION009', 'user005', 'SESSION_STARTED', 'PRACTICE', '{"category": "STUDY", "difficulty": 1}', '2024-01-18 11:00:00'),
 ('EVT019', 'SESSION009', 'user005', 'SESSION_COMPLETED', 'PRACTICE', '{"totalQuestions": 5, "correctAnswers": 5, "accuracy": 100.0}', '2024-01-18 11:25:00'),
 
-('EVT020', 'SESSION010', 'user006', 'SESSION_STARTED', 'REVIEW', '{"reviewType": "MIXED"}', '2024-01-18 14:00:00'),
+('EVT020', 'SESSION010', 'user006', 'SESSION_STARTED', 'REVIEW', '{"reviewType": "MIXED"}', '2024-01-18 14:00:00'), 
 ('EVT021', 'SESSION010', 'user006', 'SESSION_COMPLETED', 'REVIEW', '{"totalQuestions": 6, "correctAnswers": 1, "accuracy": 16.7}', '2024-01-18 14:35:00');
 
 -- =====================================================

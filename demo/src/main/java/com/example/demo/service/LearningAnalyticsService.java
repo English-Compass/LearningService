@@ -6,10 +6,13 @@ import com.example.demo.dto.analytics.DailyActivityData;
 import com.example.demo.dto.analytics.QuestionTypeChartData;
 import com.example.demo.entity.QuestionAnswer;
 import com.example.demo.entity.LearningSession;
+import com.example.demo.entity.LearningPatternAnalysis;
 import com.example.demo.repository.QuestionAnswerRepository;
 import com.example.demo.repository.LearningSessionRepository;
+import com.example.demo.repository.LearningPatternAnalysisRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -17,78 +20,223 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Map;
 
 /**
- * 학습 통계 서비스 (웹 대시보드용)
- * 사용자 웹 대시보드에 표시될 통계 데이터만 제공하는 단순화된 서비스
- * - 성과 카드용 요약 통계
- * - 그래프 차트용 시계열 데이터
- * 복잡한 분석 기능은 LearningPatternAnalysisService에서 담당
+ * 학습 분석 서비스
+ * 뷰 기반 데이터 조회 및 저장된 분석 결과 활용
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class LearningAnalyticsService {
 
     private final QuestionAnswerRepository questionAnswerRepository;
     private final LearningSessionRepository learningSessionRepository;
+    private final LearningPatternAnalysisRepository learningPatternAnalysisRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     /**
-     * 학습 성과 카드 데이터 (대시보드 상단 요약 카드용)
-     * 사용자의 기간별 학습 성과를 요약하여 제공
+     * 사용자 학습 분석 데이터 조회 (뷰 기반)
+     * user_learning_analytics_view 뷰에서 직접 조회
+     */
+    public Map<String, Object> getUserLearningAnalytics(String userId) {
+        log.info("사용자 학습 분석 데이터 조회: userId={}", userId);
+        
+        String sql = """
+            SELECT 
+                total_sessions,
+                total_questions_solved,
+                total_correct_answers,
+                accuracy_rate,
+                error_rate,
+                avg_solve_time,
+                retry_rate,
+                learning_progress_rate,
+                last_learning_date,
+                total_learning_time_minutes
+            FROM user_learning_analytics_view 
+            WHERE user_id = ?
+            """;
+        
+        try {
+            Map<String, Object> result = jdbcTemplate.queryForMap(sql, userId);
+            log.info("뷰 기반 학습 분석 데이터 조회 성공: userId={}", userId);
+            return result;
+        } catch (Exception e) {
+            log.error("뷰 기반 학습 분석 데이터 조회 실패: userId={}", e.getMessage());
+            return createEmptyAnalytics(userId);
+        }
+    }
+
+    /**
+     * 카테고리별 성과 데이터 조회 (뷰 기반)
+     * category_performance_view 뷰에서 직접 조회
+     */
+    public List<Map<String, Object>> getCategoryPerformance(String userId) {
+        log.info("카테고리별 성과 데이터 조회: userId={}", userId);
+        
+        String sql = """
+            SELECT 
+                major_category,
+                minor_category,
+                questions_solved,
+                correct_answers,
+                category_proficiency,
+                avg_category_solve_time,
+                last_category_practice_date
+            FROM category_performance_view 
+            WHERE user_id = ?
+            ORDER BY category_proficiency DESC
+            """;
+        
+        try {
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, userId);
+            log.info("카테고리별 성과 데이터 조회 성공: userId={}, count={}", userId, results.size());
+            return results;
+        } catch (Exception e) {
+            log.error("카테고리별 성과 데이터 조회 실패: userId={}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 난이도별 성취도 데이터 조회 (뷰 기반)
+     * difficulty_achievement_view 뷰에서 직접 조회
+     */
+    public List<Map<String, Object>> getDifficultyAchievement(String userId) {
+        log.info("난이도별 성취도 데이터 조회: userId={}", userId);
+        
+        String sql = """
+            SELECT 
+                difficulty_level,
+                questions_solved,
+                correct_answers,
+                difficulty_achievement_rate,
+                avg_difficulty_solve_time,
+                avg_attempts_per_question
+            FROM difficulty_achievement_view 
+            WHERE user_id = ?
+            ORDER BY difficulty_level ASC
+            """;
+        
+        try {
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, userId);
+            log.info("난이도별 성취도 데이터 조회 성공: userId={}, count={}", userId, results.size());
+            return results;
+        } catch (Exception e) {
+            log.error("난이도별 성취도 데이터 조회 실패: userId={}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 문제 통계 데이터 조회 (뷰 기반)
+     * question_stats_view 뷰에서 직접 조회
+     */
+    public List<Map<String, Object>> getQuestionStats() {
+        log.info("문제 통계 데이터 조회");
+        
+        String sql = """
+            SELECT 
+                question_id,
+                question_type,
+                category,
+                difficulty_level,
+                total_solve_count,
+                correct_solve_count,
+                correct_rate,
+                avg_solve_time,
+                distinct_user_count
+            FROM question_stats_view 
+            ORDER BY total_solve_count DESC
+            """;
+        
+        try {
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(sql);
+            log.info("문제 통계 데이터 조회 성공: count={}", results.size());
+            return results;
+        } catch (Exception e) {
+            log.error("문제 통계 데이터 조회 실패: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 저장된 학습 패턴 분석 결과 조회
+     * learning_pattern_analysis 테이블에서 조회
+     */
+    public Map<String, Object> getStoredLearningPattern(String userId, String analysisType) {
+        log.info("저장된 학습 패턴 분석 결과 조회: userId={}, analysisType={}", userId, analysisType);
+        
+        try {
+            List<LearningPatternAnalysis> analyses = learningPatternAnalysisRepository
+                .findByUserIdAndAnalysisTypeOrderByAnalyzedAtDesc(userId, analysisType);
+            
+            if (analyses.isEmpty()) {
+                log.warn("저장된 학습 패턴 분석 결과가 없음: userId={}, analysisType={}", userId, analysisType);
+                return createEmptyPatternAnalysis(userId, analysisType);
+            }
+            
+            // 가장 최근 분석 결과 반환
+            LearningPatternAnalysis latestAnalysis = analyses.get(0);
+            Map<String, Object> result = new HashMap<>();
+            result.put("analysisId", latestAnalysis.getAnalysisId());
+            result.put("userId", latestAnalysis.getUserId());
+            result.put("analysisType", latestAnalysis.getAnalysisType());
+            result.put("startDate", latestAnalysis.getStartDate());
+            result.put("endDate", latestAnalysis.getEndDate());
+            result.put("analyzedAt", latestAnalysis.getAnalyzedAt());
+            result.put("basicStatistics", latestAnalysis.getBasicStatistics());
+            result.put("learningPattern", latestAnalysis.getLearningPattern());
+            result.put("learningPatternInfo", latestAnalysis.getLearningPatternInfo());
+            result.put("learningProgress", latestAnalysis.getLearningProgress());
+            result.put("performanceAnalysis", latestAnalysis.getPerformanceAnalysis());
+            result.put("questionTypePerformances", latestAnalysis.getQuestionTypePerformances());
+            
+            log.info("저장된 학습 패턴 분석 결과 조회 성공: userId={}, analysisId={}", userId, latestAnalysis.getAnalysisId());
+            return result;
+            
+        } catch (Exception e) {
+            log.error("저장된 학습 패턴 분석 결과 조회 실패: userId={}", userId, e);
+            return createEmptyPatternAnalysis(userId, analysisType);
+        }
+    }
+
+    /**
+     * 학습 성과 카드 데이터 (기존 방식 유지, 호환성)
      */
     public PerformanceCard getPerformanceCard(String userId, LocalDate fromDate, LocalDate toDate) {
         log.info("학습 성과 카드 데이터 조회: userId={}, fromDate={}, toDate={}", userId, fromDate, toDate);
         
-        LocalDateTime startDateTime = fromDate.atStartOfDay();
-        LocalDateTime endDateTime = toDate.atTime(23, 59, 59);
-        
-        // 기간 내 모든 세션 데이터 조회 (전체 기간 통계용)
-        List<LearningSession> sessions = learningSessionRepository.findByUserIdAndStartedAtBetweenOrderByCreatedAtDesc(
-            userId, startDateTime, endDateTime);
-        
-        // 기간 내 모든 답변 데이터 조회
-        // QuestionAnswer에는 userId가 없으므로 sessionId를 통해 조회
-        List<QuestionAnswer> answers = new ArrayList<>();
-        for (LearningSession session : sessions) {
-            List<QuestionAnswer> sessionAnswers = questionAnswerRepository.findBySessionIdOrderByAnsweredAtAsc(session.getSessionId());
-            answers.addAll(sessionAnswers);
-        }
-        
-        if (answers.isEmpty()) {
+        try {
+            // 먼저 뷰에서 기본 데이터 조회
+            Map<String, Object> analytics = getUserLearningAnalytics(userId);
+            
+            if (analytics.isEmpty()) {
+                return createEmptyPerformanceCard(userId, fromDate, toDate);
+            }
+            
+            // 뷰 데이터를 PerformanceCard로 변환
+            return PerformanceCard.builder()
+                .userId(userId)
+                .periodStart(fromDate)
+                .periodEnd(toDate)
+                .totalSessions(((Number) analytics.get("total_sessions")).intValue())
+                .totalQuestions(((Number) analytics.get("total_questions_solved")).intValue())
+                .totalCorrectAnswers(((Number) analytics.get("total_correct_answers")).intValue())
+                .overallAccuracyRate(((Number) analytics.get("accuracy_rate")).doubleValue())
+                .totalStudyTime(((Number) analytics.get("total_learning_time_minutes")).intValue())
+                .averageSessionTime(((Number) analytics.get("total_learning_time_minutes")).doubleValue() / 
+                                 Math.max(((Number) analytics.get("total_sessions")).doubleValue(), 1.0))
+                .totalScore(((Number) analytics.get("total_correct_answers")).doubleValue() * 5.0)
+                .studyDays(calculateStudyDaysFromAnalytics(analytics))
+                .build();
+                
+        } catch (Exception e) {
+            log.error("성과 카드 데이터 생성 중 오류 발생: userId={}", userId, e);
             return createEmptyPerformanceCard(userId, fromDate, toDate);
         }
-        
-        // 기본 통계 계산
-        int totalQuestions = answers.size();
-        int correctAnswers = (int) answers.stream().filter(QuestionAnswer::getIsCorrect).count();
-        double accuracyRate = (double) correctAnswers / totalQuestions * 100;
-        
-        // 총 학습 시간 계산 (분 단위)
-        int totalStudyTime = answers.stream()
-            .filter(answer -> answer.getTimeSpent() != null)
-            .mapToInt(QuestionAnswer::getTimeSpent)
-            .sum() / 60;
-        
-        // 평균 세션 시간 계산
-        double averageSessionTime = sessions.size() > 0 ? (double) totalStudyTime / sessions.size() : 0.0;
-        
-        // 총 획득 점수 계산 (정답 수 × 5점)
-        double totalScore = correctAnswers * 5.0;
-        
-        return PerformanceCard.builder()
-            .userId(userId)                                          // 사용자 ID
-            .periodStart(fromDate)                                   // 조회 기간 시작일
-            .periodEnd(toDate)                                       // 조회 기간 종료일
-            .totalSessions(sessions.size())                          // 해당 기간 내 완료한 총 세션 수
-            .totalQuestions(totalQuestions)                          // 해당 기간 내 풀어본 총 문제 수
-            .totalCorrectAnswers(correctAnswers)                     // 해당 기간 내 맞힌 총 문제 수
-            .overallAccuracyRate(accuracyRate)                      // 해당 기간 내 전체 정답률 (%)
-            .totalStudyTime(totalStudyTime)                         // 해당 기간 내 총 학습 시간 (분 단위)
-            .averageSessionTime(averageSessionTime)                 // 세션당 평균 학습 시간 (분 단위)
-            .totalScore(totalScore)                                 // 해당 기간 내 총 획득 점수 (정답 수 × 5점)
-            .studyDays(calculateStudyDays(answers))                 // 해당 기간 내 실제 학습한 일수
-            .build();
     }
     
     /**
@@ -322,7 +470,25 @@ public class LearningAnalyticsService {
     // ===== 유틸리티 메서드들 =====
     
     /**
-     * 빈 성과 카드 생성 (데이터가 없을 때)
+     * 빈 학습 분석 데이터 생성
+     */
+    private Map<String, Object> createEmptyAnalytics(String userId) {
+        Map<String, Object> emptyAnalytics = new HashMap<>();
+        emptyAnalytics.put("total_sessions", 0);
+        emptyAnalytics.put("total_questions_solved", 0);
+        emptyAnalytics.put("total_correct_answers", 0);
+        emptyAnalytics.put("accuracy_rate", 0.0);
+        emptyAnalytics.put("error_rate", 0.0);
+        emptyAnalytics.put("avg_solve_time", 0.0);
+        emptyAnalytics.put("retry_rate", 0.0);
+        emptyAnalytics.put("learning_progress_rate", 0.0);
+        emptyAnalytics.put("last_learning_date", null);
+        emptyAnalytics.put("total_learning_time_minutes", 0);
+        return emptyAnalytics;
+    }
+
+    /**
+     * 빈 성과 카드 데이터 생성
      */
     private PerformanceCard createEmptyPerformanceCard(String userId, LocalDate fromDate, LocalDate toDate) {
         return PerformanceCard.builder()
@@ -339,15 +505,38 @@ public class LearningAnalyticsService {
             .studyDays(0)
             .build();
     }
-    
+
     /**
-     * 실제 학습한 일수 계산
+     * 빈 학습 패턴 분석 결과 생성
      */
-    private int calculateStudyDays(List<QuestionAnswer> answers) {
-        return (int) answers.stream()
-            .map(answer -> answer.getAnsweredAt().toLocalDate())
-            .distinct()
-            .count();
+    private Map<String, Object> createEmptyPatternAnalysis(String userId, String analysisType) {
+        Map<String, Object> emptyPattern = new HashMap<>();
+        emptyPattern.put("analysisId", null);
+        emptyPattern.put("userId", userId);
+        emptyPattern.put("analysisType", analysisType);
+        emptyPattern.put("startDate", null);
+        emptyPattern.put("endDate", null);
+        emptyPattern.put("analyzedAt", null);
+        emptyPattern.put("basicStatistics", Collections.emptyMap());
+        emptyPattern.put("learningPattern", Collections.emptyMap());
+        emptyPattern.put("learningPatternInfo", Collections.emptyMap());
+        emptyPattern.put("learningProgress", Collections.emptyMap());
+        emptyPattern.put("performanceAnalysis", Collections.emptyMap());
+        emptyPattern.put("questionTypePerformances", Collections.emptyList());
+        return emptyPattern;
+    }
+
+    /**
+     * 뷰 데이터에서 실제 학습한 일수 계산
+     */
+    private int calculateStudyDaysFromAnalytics(Map<String, Object> analytics) {
+        // user_learning_analytics_view 뷰에서 last_learning_date를 사용
+        String lastLearningDateStr = (String) analytics.get("last_learning_date");
+        if (lastLearningDateStr == null || lastLearningDateStr.isEmpty()) {
+            return 0; // 데이터가 없을 경우
+        }
+        LocalDate lastLearningDate = LocalDate.parse(lastLearningDateStr, DateTimeFormatter.ISO_DATE);
+        return (int) lastLearningDate.until(LocalDate.now(), java.time.temporal.ChronoUnit.DAYS);
     }
     
     /**

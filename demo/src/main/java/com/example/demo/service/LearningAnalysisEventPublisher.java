@@ -1,31 +1,28 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.analytics.LearningPatternAnalysisDTO;
-import com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * 학습 분석 완료 이벤트 발행 서비스
- * 분석 완료 시 다른 서비스들이 구독할 수 있는 이벤트를 발행
+ * 학습 분석 이벤트 발행 서비스
+ * 분석 완료 후 다른 서비스들이 구독할 수 있는 이벤트를 발행
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class LearningAnalysisEventPublisher {
 
-    private final ApplicationEventPublisher eventPublisher;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     /**
      * 개별 세션 분석 완료 이벤트 발행
      */
     public void publishSessionAnalysisCompletedEvent(String userId, String analysisId, String sessionId) {
-        LearningPatternAnalysisCompletedEvent event = LearningPatternAnalysisCompletedEvent.builder()
+        com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent event = com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent.builder()
             .userId(userId)
             .sessionAnalysisId(analysisId)
             .completeAnalysisId(null) // 개별 세션만 분석된 경우
@@ -47,7 +44,7 @@ public class LearningAnalysisEventPublisher {
      * 전체 학습 분석 완료 이벤트 발행
      */
     public void publishCompleteAnalysisCompletedEvent(String userId, String analysisId, String sessionId) {
-        LearningPatternAnalysisCompletedEvent event = LearningPatternAnalysisCompletedEvent.builder()
+        com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent event = com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent.builder()
             .userId(userId)
             .sessionAnalysisId(null) // 전체 학습만 분석된 경우
             .completeAnalysisId(analysisId)
@@ -88,7 +85,7 @@ public class LearningAnalysisEventPublisher {
             metadata = mergedMetadata;
         }
 
-        LearningPatternAnalysisCompletedEvent event = LearningPatternAnalysisCompletedEvent.builder()
+        com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent event = com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent.builder()
             .userId(userId)
             .sessionAnalysisId(sessionAnalysisId)
             .completeAnalysisId(completeAnalysisId)
@@ -106,7 +103,7 @@ public class LearningAnalysisEventPublisher {
      * 분석 실패 이벤트 발행
      */
     public void publishAnalysisFailedEvent(String userId, String sessionId, String errorMessage, String analysisType) {
-        LearningPatternAnalysisCompletedEvent event = LearningPatternAnalysisCompletedEvent.builder()
+        com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent event = com.example.demo.service.LearningSessionEventListener.LearningPatternAnalysisCompletedEvent.builder()
             .userId(userId)
             .sessionAnalysisId(null)
             .completeAnalysisId(null)

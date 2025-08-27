@@ -1,9 +1,22 @@
 -- =====================================================
--- 학습 서비스 데이터베이스 초기화 스크립트
--- 생성일: 2024년
--- 목적: Question, QuestionAnswer, QuestionStatsView 테이블 및 관련 뷰 생성
--- 형태: CREATE IF NOT EXISTS (기존 스키마 보존)
+-- 학습 서비스 데이터베이스 초기화 스크립트 (수정 완료)
+-- 목적: 모든 테이블, 뷰, 인덱스 생성 (기존 테이블이 있으면 생성하지 않음)
 -- =====================================================
+
+-- 기존 뷰와 테이블 삭제는 제거하고 CREATE IF NOT EXISTS 방식 사용
+-- DROP VIEW IF EXISTS question_stats_view;
+-- DROP VIEW IF EXISTS user_learning_analytics_view;
+-- DROP VIEW IF EXISTS category_performance_view;
+-- DROP VIEW IF EXISTS difficulty_achievement_view;
+-- DROP TABLE IF EXISTS learning_pattern_analysis;
+-- DROP TABLE IF EXISTS learning_session_events;
+-- DROP TABLE IF EXISTS user_selected_minor_categories;
+-- DROP TABLE IF EXISTS user_interests;
+-- DROP TABLE IF EXISTS user_profiles;
+-- DROP TABLE IF EXISTS question_answer;
+-- DROP TABLE IF EXISTS session_question;
+-- DROP TABLE IF EXISTS learning_sessions;
+-- DROP TABLE IF EXISTS question;
 
 -- =====================================================
 -- 1. 문제 테이블 (Question)
@@ -52,13 +65,6 @@ CREATE TABLE IF NOT EXISTS learning_sessions (
     status ENUM('STARTED', 'IN_PROGRESS', 'COMPLETED') NOT NULL DEFAULT 'STARTED',
     session_type ENUM('PRACTICE', 'REVIEW', 'WRONG_ANSWER') NOT NULL DEFAULT 'PRACTICE',
     session_metadata TEXT COMMENT '세션 메타데이터 (JSON)',
-    
-    -- 통계 정보
-    total_questions INT COMMENT '총 문제 수',
-    answered_questions INT DEFAULT 0 COMMENT '답변한 문제 수',
-    correct_answers INT DEFAULT 0 COMMENT '정답 수',
-    wrong_answers INT DEFAULT 0 COMMENT '오답 수',
-    progress_percentage DOUBLE DEFAULT 0.0 COMMENT '진행률 (%)',
     
     -- 인덱스
     INDEX idx_learning_sessions_user (user_id),
@@ -113,7 +119,7 @@ CREATE TABLE IF NOT EXISTS question_answer (
     FOREIGN KEY (question_id) REFERENCES question(question_id) ON DELETE CASCADE,
     
     -- 유니크 제약조건 (한 세션에서 같은 문제는 한 번만 답변)
-    UNIQUE KEY uk_session_question_answer (session_id, question_id),
+    UNIQUE KEY uk_session_question_answer (session_id, question_id,session_type),
     
     -- 인덱스
     INDEX idx_question_answer_session (session_id),
@@ -126,43 +132,83 @@ CREATE TABLE IF NOT EXISTS question_answer (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='사용자 문제 답변 테이블';
 
 -- =====================================================
--- 5. 학습 세션 이벤트 테이블 (LearningSessionEvent)
+-- 5. 사용자 프로필 테이블 (UserProfile)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id VARCHAR(255) NOT NULL PRIMARY KEY,
+    learning_purpose VARCHAR(50) COMMENT '학습 목적',
+    learning_style VARCHAR(50) COMMENT '학습 스타일',
+    difficulty_preference VARCHAR(50) COMMENT '난이도 선호도',
+    interests_version INT COMMENT '관심사 버전',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    interests_last_updated DATETIME(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='사용자 프로필 테이블';
+
+-- =====================================================
+-- 6. 사용자 관심사 테이블 (UserInterests)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS user_interests (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    interest VARCHAR(255) NOT NULL,
+    
+    UNIQUE KEY uk_user_interest (user_id, interest),
+    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='사용자 관심사 테이블';
+
+-- =====================================================
+-- 7. 사용자 선택 소분류 데이터 삽입 (UserSelectedMinorCategories)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS user_selected_minor_categories (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    minor_category VARCHAR(255) NOT NULL,
+
+    UNIQUE KEY uk_user_minor_category (user_id, minor_category),
+    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='사용자 선택 소분류 테이블';
+
+-- =====================================================
+-- 8. 학습 세션 이벤트 데이터 삽입 (LearningSessionEvent)
 -- =====================================================
 CREATE TABLE IF NOT EXISTS learning_session_events (
     event_id VARCHAR(255) NOT NULL PRIMARY KEY,
-    session_id VARCHAR(255) NOT NULL COMMENT '학습 세션 ID (FK)',
-    user_id VARCHAR(255) NOT NULL COMMENT '사용자 ID',
+    session_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    session_type VARCHAR(50) NOT NULL,
+    event_metadata TEXT COMMENT '이벤트 메타데이터 (JSON)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     
-    -- 시간 정보
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '이벤트 생성 시간',
-    published_at DATETIME(6) COMMENT '이벤트 발행 시간',
-    
-    -- 세션 기본 정보
-    session_type VARCHAR(50) NOT NULL COMMENT 'PRACTICE, REVIEW, WRONG_ANSWER',
-    session_started_at DATETIME(6) NOT NULL COMMENT '세션 시작 시간',
-    session_completed_at DATETIME(6) NOT NULL COMMENT '세션 완료 시간',
-    session_status VARCHAR(50) NOT NULL COMMENT 'COMPLETED, ABANDONED, PAUSED',
-    session_metadata TEXT COMMENT '세션 메타데이터 (JSON)',
-    
-    -- 이벤트 메타데이터
-    event_type VARCHAR(50) NOT NULL COMMENT '이벤트 타입 (SESSION_COMPLETED, SESSION_ABANDONED, SESSION_PAUSED)',
-    event_status VARCHAR(50) NOT NULL COMMENT '이벤트 상태 (PENDING, PUBLISHED, FAILED)',
-    event_version VARCHAR(20) COMMENT '이벤트 버전 (향후 호환성)',
-    publish_error TEXT COMMENT '발행 실패 시 에러 메시지',
-    
-    -- 외래키 제약조건
     FOREIGN KEY (session_id) REFERENCES learning_sessions(session_id) ON DELETE CASCADE,
-    
-    -- 인덱스
-    INDEX idx_learning_session_events_session (session_id),
-    INDEX idx_learning_session_events_user (user_id),
-    INDEX idx_learning_session_events_status (event_status),
-    INDEX idx_learning_session_events_type (event_type),
-    INDEX idx_learning_session_events_created (created_at)
+    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='학습 세션 이벤트 테이블';
 
 -- =====================================================
--- 6. 문제 통계 뷰 (QuestionStatsView)
+-- 9. 학습 패턴 분석 데이터 삽입 (LearningPatternAnalysis)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS learning_pattern_analysis (
+    analysis_id VARCHAR(255) NOT NULL PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    session_id VARCHAR(255),
+    analysis_type VARCHAR(50) NOT NULL,
+    start_date DATETIME(6) NOT NULL,
+    end_date DATETIME(6) NOT NULL,
+    analyzed_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    basic_statistics TEXT COMMENT '기본 통계 (JSON)',
+    learning_pattern TEXT COMMENT '학습 패턴 (JSON)',
+    learning_pattern_info TEXT COMMENT '학습 패턴 상세 정보 (JSON)',
+    learning_progress TEXT COMMENT '학습 진행도 (JSON)',
+    performance_analysis TEXT COMMENT '성과 분석 (JSON)',
+    question_type_performances TEXT COMMENT '문제 유형별 성과 (JSON)',
+
+    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='학습 패턴 분석 결과 테이블';
+
+
+-- =====================================================
+-- 10. 문제 통계 뷰 (QuestionStatsView)
 -- =====================================================
 CREATE OR REPLACE VIEW question_stats_view AS
 SELECT 
@@ -196,9 +242,9 @@ LEFT JOIN learning_sessions ls ON qa.session_id = ls.session_id
 GROUP BY q.question_id, q.question_type, q.major_category, q.difficulty_level;
 
 -- =====================================================
--- 7. 사용자 학습 분석 뷰 (User Learning Analytics)
+-- 11. 사용자 학습 분석 뷰 (User Learning Analytics)
 -- =====================================================
-CREATE OR REPLACE VIEW user_learning_analytics AS
+CREATE OR REPLACE VIEW user_learning_analytics_view AS
 SELECT 
     ls.user_id,
     
@@ -245,7 +291,7 @@ LEFT JOIN question_answer qa ON ls.session_id = qa.session_id
 GROUP BY ls.user_id;
 
 -- =====================================================
--- 8. 카테고리별 성과 뷰 (Category Performance View)
+-- 12. 카테고리별 성과 뷰 (Category Performance View)
 -- =====================================================
 CREATE OR REPLACE VIEW category_performance_view AS
 SELECT 
@@ -275,7 +321,7 @@ JOIN question q ON qa.question_id = q.question_id
 GROUP BY ls.user_id, q.major_category, q.minor_category;
 
 -- =====================================================
--- 9. 난이도별 성취도 뷰 (Difficulty Achievement View)
+-- 13. 난이도별 성취도 뷰 (Difficulty Achievement View)
 -- =====================================================
 CREATE OR REPLACE VIEW difficulty_achievement_view AS
 SELECT 
@@ -304,11 +350,5 @@ JOIN question q ON qa.question_id = q.question_id
 GROUP BY ls.user_id, q.difficulty_level;
 
 -- =====================================================
--- DDL 스크립트 완료 (CREATE IF NOT EXISTS 방식)
--- 
--- 장점:
--- 1. 기존 테이블과 데이터 보존
--- 2. 개발 중 재실행 시 안전함
--- 3. 스키마 변경 시에만 수동으로 DROP 후 재생성
--- 4. VIEW는 CREATE OR REPLACE로 항상 최신 버전 적용
+-- DDL 스크립트 완료
 -- =====================================================

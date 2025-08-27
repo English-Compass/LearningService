@@ -42,9 +42,6 @@ public class LearningSession {
     private String sessionMetadata; // 세션 메타데이터 (JSON)
     
     @Column
-    private Double progressPercentage; // 진행률 (%)
-    
-    @Column
     private LocalDateTime startedAt; // 세션 시작 시간
 
     public enum SessionType {
