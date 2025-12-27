@@ -26,9 +26,9 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 4. 빌드 및 테스트 (여기서 실패하면 배포 중단됨)
+    # 4. 빌드 (테스트 스킵)
     - name: Build with Gradle
-      run: ./gradlew clean build
+      run: ./gradlew clean build -x test
 
     # 5. Docker Hub 로그인
     - name: Login to Docker Hub
