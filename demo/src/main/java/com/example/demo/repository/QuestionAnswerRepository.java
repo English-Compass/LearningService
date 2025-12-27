@@ -1,6 +1,7 @@
 package com.example.demo.repository;
 
-import com.example.demo.entity.QuestionAnswer; 
+import com.example.demo.entity.QuestionAnswer;
+import com.example.demo.entity.QuestionCategory;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -162,82 +163,77 @@ public interface QuestionAnswerRepository extends JpaRepository<QuestionAnswer, 
     List<Object[]> getRecentMonthsStatsByUserId(@Param("userId") String userId, 
                                                @Param("startDate") LocalDateTime startDate);
 
-    // ===== 문제 유형별 성과 분석을 위한 JOIN 메서드들 =====
-    // LearningSession과 JOIN하여 sessionId를 통해 userId를 가져옴
+    // ===== 문제 유형별 성과 분석 메서드들 =====
+    // Question 테이블 없이 question_answer의 questionType 필드 사용
 
     /**
-     * 사용자 ID와 문제 유형으로 답변 기록 조회 (Question과 JOIN)
+     * 사용자 ID와 문제 유형으로 답변 기록 조회
      * 문제 유형별 성과 분석에 사용
      */
     @Query("SELECT qa FROM QuestionAnswer qa " +
-           "JOIN Question q ON qa.questionId = q.questionId " +
            "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
-           "WHERE ls.userId = :userId AND q.questionType = :questionType " +
+           "WHERE ls.userId = :userId AND qa.questionType = :questionType " +
            "ORDER BY qa.answeredAt ASC")
     List<QuestionAnswer> findByUserIdAndQuestionType(@Param("userId") String userId, 
                                                     @Param("questionType") String questionType);
 
     /**
-     * 세션 ID와 문제 유형으로 답변 기록 조회 (Question과 JOIN)
+     * 세션 ID와 문제 유형으로 답변 기록 조회
      * 특정 세션의 문제 유형별 성과 분석에 사용
      */
     @Query("SELECT qa FROM QuestionAnswer qa " +
-           "JOIN Question q ON qa.questionId = q.questionId " +
-           "WHERE qa.sessionId = :sessionId AND q.questionType = :questionType " +
+           "WHERE qa.sessionId = :sessionId AND qa.questionType = :questionType " +
            "ORDER BY qa.answeredAt ASC")
     List<QuestionAnswer> findBySessionIdAndQuestionType(@Param("sessionId") String sessionId, 
                                                        @Param("questionType") String questionType);
 
     /**
-     * 사용자 ID로 문제 유형별 통계 조회 (Question과 JOIN)
+     * 사용자 ID로 문제 유형별 통계 조회
      * 전체 학습에서 문제 유형별 성과 분석에 사용
      */
-    @Query("SELECT q.questionType, " +
+    @Query("SELECT qa.questionType, " +
            "COUNT(qa) as totalQuestions, " +
            "SUM(CASE WHEN qa.isCorrect = true THEN 1 ELSE 0 END) as correctAnswers, " +
            "SUM(CASE WHEN qa.isCorrect = false THEN 1 ELSE 0 END) as wrongAnswers, " +
            "AVG(qa.timeSpent) as averageTimeSpent " +
            "FROM QuestionAnswer qa " +
-           "JOIN Question q ON qa.questionId = q.questionId " +
            "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
            "WHERE ls.userId = :userId " +
-           "GROUP BY q.questionType " +
-           "ORDER BY q.questionType")
+           "GROUP BY qa.questionType " +
+           "ORDER BY qa.questionType")
     List<Object[]> getQuestionTypeStatsByUserId(@Param("userId") String userId);
 
     /**
-     * 세션 ID로 문제 유형별 통계 조회 (Question과 JOIN)
+     * 세션 ID로 문제 유형별 통계 조회
      * 특정 세션의 문제 유형별 성과 분석에 사용
      */
-    @Query("SELECT q.questionType, " +
+    @Query("SELECT qa.questionType, " +
            "COUNT(qa) as totalQuestions, " +
            "SUM(CASE WHEN qa.isCorrect = true THEN 1 ELSE 0 END) as correctAnswers, " +
            "SUM(CASE WHEN qa.isCorrect = false THEN 1 ELSE 0 END) as wrongAnswers, " +
            "AVG(qa.timeSpent) as averageTimeSpent " +
            "FROM QuestionAnswer qa " +
-           "JOIN Question q ON qa.questionId = q.questionId " +
            "WHERE qa.sessionId = :sessionId " +
-           "GROUP BY q.questionType " +
-           "ORDER BY q.questionType")
+           "GROUP BY qa.questionType " +
+           "ORDER BY qa.questionType")
     List<Object[]> getQuestionTypeStatsBySessionId(@Param("sessionId") String sessionId);
 
     /**
-     * 사용자 ID와 날짜 범위로 문제 유형별 통계 조회 (Question과 JOIN)
+     * 사용자 ID와 날짜 범위로 문제 유형별 통계 조회
      * 특정 기간의 문제 유형별 성과 분석에 사용
      */
-    @Query("SELECT q.questionType, " +
+    @Query("SELECT qa.questionType, " +
            "COUNT(qa) as totalQuestions, " +
            "SUM(CASE WHEN qa.isCorrect = true THEN 1 ELSE 0 END) as correctAnswers, " +
            "SUM(CASE WHEN qa.isCorrect = false THEN 1 ELSE 0 END) as wrongAnswers, " +
            "AVG(qa.timeSpent) as averageTimeSpent " +
            "FROM QuestionAnswer qa " +
-           "JOIN Question q ON qa.questionId = q.questionId " +
            "JOIN LearningSession ls ON qa.sessionId = ls.sessionId " +
            "WHERE ls.userId = :userId " +
            "AND qa.answeredAt >= :startDate " +
            "AND qa.answeredAt <= :endDate " +
-           "GROUP BY q.questionType " +
-           "ORDER BY q.questionType")
+           "GROUP BY qa.questionType " +
+           "ORDER BY qa.questionType")
     List<Object[]> getQuestionTypeStatsByUserIdAndDateRange(@Param("userId") String userId, 
                                                            @Param("startDate") LocalDateTime startDate, 
                                                            @Param("endDate") LocalDateTime endDate);

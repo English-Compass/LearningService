@@ -15,20 +15,33 @@ public class QuestionAnswer {
     private Long id;
     
     @Column(nullable = false)
-    private String sessionId; // LearningSession 참조방ㄱ
+    private String sessionId; // LearningSession 참조
     
     @Column(nullable = false)
-    private String questionId; // Question 참조 (외래키)
+    private String questionId; // ProblemService 문제 ID (외래키 없음)
 
     @Column(nullable = false)
     private String sessionType; // 세션 타입 (PRACTICE, REVIEW, WRONG_ANSWER)
     
-    // === 사용자 답변 데이터만 ===
+    // === ProblemService에서 받은 문제 메타데이터 (분석용) ===
+    @Column(name = "question_type")
+    private String questionType; // 문제 유형 (VOCABULARY, GRAMMAR, READING 등)
+    
+    @Column(name = "major_category")
+    private String majorCategory; // 대분류 (READING, LISTENING 등)
+    
+    @Column(name = "minor_category")
+    private String minorCategory; // 소분류 (WORD_USAGE, SENTENCE_STRUCTURE 등)
+    
+    @Column(name = "difficulty_level")
+    private Integer difficultyLevel; // 난이도 (1~3)
+    
+    // === 사용자 답변 데이터 ===
     @Column(nullable = false)
     private String userAnswer; // 사용자 답변 (A, B, C 중 하나)
     
     @Column(nullable = false)
-    private Boolean isCorrect; // 정답 여부 (계산된 값)
+    private Boolean isCorrect; // 정답 여부 (ProblemService에서 계산된 값)
     
     @Column
     private Integer timeSpent; // 문제 풀이 시간(초)
@@ -38,72 +51,4 @@ public class QuestionAnswer {
 
     @Column(nullable = false)
     private Integer solveCount; // 특정 문제 풀이 횟수(집계 자료)
-    
-    
-    // === 편의 메서드들 ===
-    
-    // 정답 여부 자동 계산 (Question 객체 필요)
-    public void calculateCorrectness(Question question) {
-        if (question != null && userAnswer != null) {
-            this.isCorrect = userAnswer.equals(question.getCorrectAnswer());
-        }
-    }
-    
-    // === 편의 메서드들 (관계 매핑 제거로 인해 Question 객체 파라미터 필요) ===
-    
-    // 사용자 답변 텍스트 조회 (Question 객체 필요)
-    public String getUserAnswerText(Question question) {
-        if (question != null && userAnswer != null) {
-            switch (userAnswer.toUpperCase()) {
-                case "A": return question.getOptionA();
-                case "B": return question.getOptionB();
-                case "C": return question.getOptionC();
-                default: return null;
-            }
-        }
-        return null;
-    }
-    
-    // 정답 텍스트 조회 (Question 객체 필요)
-    public String getCorrectAnswerText(Question question) {
-        if (question != null) {
-            switch (question.getCorrectAnswer().toUpperCase()) {
-                case "A": return question.getOptionA();
-                case "B": return question.getOptionB();
-                case "C": return question.getOptionC();
-                default: return null;
-            }
-        }
-        return null;
-    }
-    
-    // 문제 해설 조회 (Question 객체 필요)
-    public String getExplanation(Question question) {
-        return question != null ? question.getExplanation() : null;
-    }
-    
-    // 문제 난이도 조회 (Question 객체 필요)
-    public String getDifficulty(Question question) {
-        return question != null ? question.getDifficultyLevel() : null;
-    }
-    
-    // 문제 대분류 조회 (Question 객체 필요)
-    public String getMajorCategory(Question question) {
-        return question != null ? question.getMajorCategory().name() : null;
-    }
-    
-    // 문제 소분류 조회 (Question 객체 필요)
-    public String getMinorCategory(Question question) {
-        return question != null ? question.getMinorCategory().name() : null;
-    }
-    
-    // 문제 유형 조회 (Question 객체 필요)
-    public String getQuestionType(Question question) {
-        return question != null ? question.getQuestionType().getDisplayName() : null;
-    }
-    
-    // 문제 텍스트 조회 (Question 객체 필요)
-    public String getQuestionText(Question question) {
-        return question != null ? question.getQuestionText() : null;
-    }
 }

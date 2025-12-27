@@ -1,17 +1,18 @@
 package com.example.demo.service;
 
+import com.example.demo.client.ProblemServiceClient;
 import com.example.demo.dto.LearningCompletedEvent;
 import com.example.demo.dto.analytics.LearningPatternAnalysisDTO;
-import com.example.demo.dto.analytics.QuestionTypePerformance;
+import com.example.demo.dto.problem.SessionDataResponseDto;
 import com.example.demo.entity.LearningSession;
 import com.example.demo.entity.QuestionAnswer;
 import com.example.demo.entity.LearningPatternAnalysis;
 import com.example.demo.entity.LearningSessionEvent;
-import com.example.demo.repository.LearningSessionRepository;
-import com.example.demo.repository.LearningSessionEventRepository;
-import com.example.demo.repository.QuestionAnswerRepository;
 import com.example.demo.service.LearningPatternAnalysisService.LearningSessionResult;
 import com.example.demo.repository.LearningPatternAnalysisRepository;
+import com.example.demo.repository.LearningSessionRepository;
+import com.example.demo.repository.QuestionAnswerRepository;
+import com.example.demo.repository.LearningSessionEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -21,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -34,12 +34,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class LearningSessionEventListener {
 
-    private final LearningSessionRepository sessionRepository;
-    private final LearningSessionEventRepository eventRepository;
-    private final QuestionAnswerRepository answerRepository;
+    private final ProblemServiceClient problemServiceClient;
+    private final SessionDataMappingService sessionDataMappingService;
     private final LearningPatternAnalysisService patternAnalysisService;
     private final LearningAnalysisEventPublisher eventPublisher;
     private final LearningPatternAnalysisRepository analysisRepository;
+    private final LearningSessionRepository learningSessionRepository;
+    private final QuestionAnswerRepository questionAnswerRepository;
+    private final LearningSessionEventRepository sessionEventRepository;
     private final ObjectMapper objectMapper;
 
 
@@ -48,64 +50,314 @@ public class LearningSessionEventListener {
      * 세션 완료 시 즉시 호출되어 학습 패턴 분석을 수행
      */
     @EventListener
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void handleLearningSessionCompleted(LearningCompletedEvent event) {
+        long startTime = System.currentTimeMillis();
+        String sessionId = event.getSessionId();
+        String userId = event.getUserId();
+        
         try {
-            String sessionId = event.getSessionId();
-            String userId = event.getUserId();
+            log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            log.info("🚀 [분석 프로세스 시작] 학습 세션 완료 이벤트 처리 시작");
+            log.info("   sessionId: {}", sessionId);
+            log.info("   userId: {}", userId);
+            log.info("   eventType: {}", event.getEventType());
+            log.info("   sessionType: {}", event.getSessionType());
+            log.info("   completedAt: {}", event.getCompletedAt());
+            log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             
-            log.info("학습 세션 완료 이벤트 수신: sessionId={}, userId={}", sessionId, userId);
+            log.info("┌─ [1단계] ProblemService API 호출");
+            log.info("   ├─ 📞 API 호출 시작: sessionId={}, userId={}", sessionId, userId);
+            long apiStartTime = System.currentTimeMillis();
+            SessionDataResponseDto sessionData = problemServiceClient.getSessionData(sessionId, userId);
+            long apiElapsedTime = System.currentTimeMillis() - apiStartTime;
             
-            // 1. 세션 기본 정보 데이터베이스에서 조회
-            LearningSession session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new RuntimeException("Session not found: " + sessionId));
+            // 받은 데이터 상세 로그
+            log.info("   ├─ 📥 API 응답 데이터 수신 완료");
+            if (sessionData != null) {
+                log.info("   ├─ 📥 받은 데이터 상세:");
+                if (sessionData.getSession() != null) {
+                    log.info("   │  ├─ 세션 정보:");
+                    log.info("   │  │  ├─ sessionId: {}", sessionData.getSession().getSessionId());
+                    log.info("   │  │  ├─ userId: {}", sessionData.getSession().getUserId());
+                    log.info("   │  │  ├─ sessionType: {}", sessionData.getSession().getSessionType());
+                    log.info("   │  │  └─ status: {}", sessionData.getSession().getStatus());
+                    log.info("   │  ├─ 세션 시간:");
+                    log.info("   │  │  ├─ startedAt: {}", sessionData.getSession().getStartedAt());
+                    log.info("   │  │  └─ completedAt: {}", sessionData.getSession().getCompletedAt());
+                } else {
+                    log.warn("   │  ⚠️  세션 정보가 null입니다");
+                }
+                
+                int questionCount = sessionData.getQuestions() != null ? sessionData.getQuestions().size() : 0;
+                int eventCount = sessionData.getEvents() != null ? sessionData.getEvents().size() : 0;
+                log.info("   │  ├─ 문제 수: {}개", questionCount);
+                log.info("   │  └─ 이벤트 수: {}개", eventCount);
+                
+                // 문제별 상세 정보 (최대 5개만)
+                if (sessionData.getQuestions() != null && !sessionData.getQuestions().isEmpty()) {
+                    log.info("   │  └─ 문제 상세 (최대 5개):");
+                    sessionData.getQuestions().stream()
+                        .limit(5)
+                        .forEach(q -> log.info("   │     ├─ questionId={}, questionType={}, isCorrect={}, timeSpent={}초", 
+                            q.getQuestionId(), q.getQuestionType(), q.getIsCorrect(), q.getTimeSpent()));
+                    if (sessionData.getQuestions().size() > 5) {
+                        log.info("   │     └─ ... 외 {}개 문제", sessionData.getQuestions().size() - 5);
+                    }
+                } else {
+                    log.warn("   │  ⚠️  문제 목록이 비어있습니다");
+                }
+            } else {
+                log.error("   │  ❌ API 응답 데이터가 null입니다!");
+            }
+            log.info("└─ ✅ API 호출 완료 (소요시간: {}ms)", apiElapsedTime);
             
-            // 2. 세션 이벤트 히스토리 조회 (Optional을 List로 변환)
-            List<LearningSessionEvent> sessionEvents = eventRepository
-                .findBySessionId(sessionId)
-                .map(List::of)
-                .orElse(List.of());
+            log.info("┌─ [2단계] API 응답을 엔티티로 매핑");
+            long mappingStartTime = System.currentTimeMillis();
+            LearningSession session = sessionDataMappingService.mapToLearningSession(sessionData.getSession());
+            String sessionType = session.getSessionType().name();
+            List<QuestionAnswer> questionAnswers = sessionDataMappingService.mapToQuestionAnswers(
+                sessionData.getQuestions(), sessionId, sessionType);
+            List<LearningSessionEvent> sessionEvents = sessionDataMappingService.mapToLearningSessionEvents(
+                sessionData.getEvents());
+            long mappingElapsedTime = System.currentTimeMillis() - mappingStartTime;
             
-            // 3. 문제 답변 기록 조회 (question_answer 테이블에서 실제 데이터 조회)
-            List<QuestionAnswer> questionAnswers = answerRepository
-                .findBySessionIdOrderByAnsweredAtAsc(sessionId);
+            // 매핑된 데이터 상세 로그
+            log.info("   ├─ 📋 매핑된 데이터:");
+            log.info("   │  ├─ 세션: sessionId={}, sessionType={}, status={}", 
+                session.getSessionId(), session.getSessionType(), session.getStatus());
+            log.info("   │  ├─ 문제 답변: 총 {}개", questionAnswers.size());
+            if (!questionAnswers.isEmpty()) {
+                long correctCount = questionAnswers.stream().filter(QuestionAnswer::getIsCorrect).count();
+                long totalTime = questionAnswers.stream()
+                    .filter(qa -> qa.getTimeSpent() != null)
+                    .mapToLong(QuestionAnswer::getTimeSpent)
+                    .sum();
+                log.info("   │  │  ├─ 정답: {}개, 오답: {}개", 
+                    correctCount, questionAnswers.size() - correctCount);
+                log.info("   │  │  └─ 총 소요시간: {}초", totalTime);
+            }
+            log.info("   │  └─ 세션 이벤트: {}개", sessionEvents.size());
+            log.info("└─ ✅ 매핑 완료 (세션: 1개, 문제: {}개, 이벤트: {}개, 소요시간: {}ms)", 
+                questionAnswers.size(), sessionEvents.size(), mappingElapsedTime);
             
-            // 4. 통합된 세션 결과 객체 생성 (DB에서 조회한 데이터로)
+            log.info("┌─ [3단계] 세션 결과 객체 생성");
+            long buildStartTime = System.currentTimeMillis();
             LearningSessionResult sessionResult = buildSessionResult(session, sessionEvents, questionAnswers);
+            long buildElapsedTime = System.currentTimeMillis() - buildStartTime;
             
-            // 5. 개별 세션 학습 패턴 분석 수행 (즉시 피드백용)
+            // 세션 결과 통계 상세 로그
+            log.info("   ├─ 📊 세션 결과 통계:");
+            log.info("   │  ├─ 전체 문제: {}개", sessionResult.getTotalQuestions());
+            log.info("   │  ├─ 정답: {}개", sessionResult.getCorrectAnswers());
+            log.info("   │  ├─ 오답: {}개", sessionResult.getTotalQuestions() - sessionResult.getCorrectAnswers());
+            double accuracyRate = sessionResult.getTotalQuestions() > 0 
+                ? (double) sessionResult.getCorrectAnswers() / sessionResult.getTotalQuestions() * 100 
+                : 0.0;
+            log.info("   │  ├─ 정답률: {:.2f}%", accuracyRate);
+            log.info("   │  ├─ 총 소요시간: {}초", sessionResult.getTotalDuration());
+            if (sessionResult.getTotalQuestions() > 0) {
+                double avgTime = (double) sessionResult.getTotalDuration() / sessionResult.getTotalQuestions();
+                log.info("   │  └─ 문제당 평균 시간: {:.2f}초", avgTime);
+            }
+            
+            log.info("└─ ✅ 세션 결과 생성 완료 (전체문제: {}개, 정답: {}개, 총시간: {}초, 소요시간: {}ms)", 
+                sessionResult.getTotalQuestions(), sessionResult.getCorrectAnswers(), 
+                sessionResult.getTotalDuration(), buildElapsedTime);
+            
+            log.info("┌─ [4단계] 개별 세션 학습 패턴 분석");
+            long sessionAnalysisStartTime = System.currentTimeMillis();
             LearningPatternAnalysisDTO sessionAnalysis = patternAnalysisService
                 .performPatternAnalysis(sessionResult);
+            long sessionAnalysisElapsedTime = System.currentTimeMillis() - sessionAnalysisStartTime;
             
-            // 6. 전체 학습 완료 분석 수행 (증분 분석으로 성능 향상)
+            // 개별 세션 분석 결과 상세 로그
+            log.info("   ├─ 📊 개별 세션 분석 결과:");
+            log.info("   │  ├─ 전체 정답률: {:.2f}%", 
+                sessionAnalysis.getOverallAccuracyRate() != null ? sessionAnalysis.getOverallAccuracyRate() : 0.0);
+            log.info("   │  ├─ 평균 풀이 시간: {:.2f}초", 
+                sessionAnalysis.getAverageSolvingTime() != null ? sessionAnalysis.getAverageSolvingTime() : 0.0);
+            
+            // 문제 유형별 성과
+            if (sessionAnalysis.getQuestionTypePerformances() != null && !sessionAnalysis.getQuestionTypePerformances().isEmpty()) {
+                log.info("   │  ├─ 문제 유형별 성과 ({}개 유형):", sessionAnalysis.getQuestionTypePerformances().size());
+                sessionAnalysis.getQuestionTypePerformances().forEach(qtp -> 
+                    log.info("   │  │  ├─ {}: 정답률 {:.2f}%, 문제수 {}개, 평균시간 {:.2f}초", 
+                        qtp.getQuestionType(),
+                        qtp.getAccuracyRate() != null ? qtp.getAccuracyRate() : 0.0,
+                        qtp.getTotalQuestions() != null ? qtp.getTotalQuestions() : 0,
+                        qtp.getAverageTime() != null ? qtp.getAverageTime() : 0.0));
+            }
+            
+            // 복습/개선/강점 영역
+            if (sessionAnalysis.getReviewRequiredTypes() != null && !sessionAnalysis.getReviewRequiredTypes().isEmpty()) {
+                log.info("   │  ├─ 🔴 복습 필요 유형 (정답률 60% 미만): {}", sessionAnalysis.getReviewRequiredTypes());
+            }
+            if (sessionAnalysis.getImprovementRequiredTypes() != null && !sessionAnalysis.getImprovementRequiredTypes().isEmpty()) {
+                log.info("   │  ├─ 🟡 개선 필요 유형 (정답률 60-80%): {}", sessionAnalysis.getImprovementRequiredTypes());
+            }
+            if (sessionAnalysis.getStrengthTypes() != null && !sessionAnalysis.getStrengthTypes().isEmpty()) {
+                log.info("   │  ├─ 🟢 강점 영역 유형 (정답률 80% 이상): {}", sessionAnalysis.getStrengthTypes());
+            }
+            if (sessionAnalysis.getRecentWrongQuestionIds() != null && !sessionAnalysis.getRecentWrongQuestionIds().isEmpty()) {
+                log.info("   │  ├─ 최근 오답 문제: {}개", sessionAnalysis.getRecentWrongQuestionIds().size());
+            }
+            if (sessionAnalysis.getSlowSolvingTypes() != null && !sessionAnalysis.getSlowSolvingTypes().isEmpty()) {
+                log.info("   │  └─ 풀이 시간 긴 유형: {}", sessionAnalysis.getSlowSolvingTypes());
+            }
+            
+            log.info("└─ ✅ 개별 세션 분석 완료 (정답률: {:.2f}%, 소요시간: {}ms)", 
+                sessionAnalysis.getOverallAccuracyRate() != null ? sessionAnalysis.getOverallAccuracyRate() : 0.0, 
+                sessionAnalysisElapsedTime);
+            
+            log.info("┌─ [5단계] 전체 학습 완료 분석 (최근 30일)");
+            long completeAnalysisStartTime = System.currentTimeMillis();
+            // 분석 기간 설정 (6단계에서도 사용)
+            LocalDateTime analysisStartDate = LocalDateTime.now().minusDays(30);
+            LocalDateTime analysisEndDate = LocalDateTime.now();
             LearningPatternAnalysisDTO completeAnalysis = patternAnalysisService
-                .analyzeCompleteLearningIncremental(userId, LocalDateTime.now().minusDays(30), LocalDateTime.now());
+                .analyzeCompleteLearningIncremental(userId, analysisStartDate, analysisEndDate);
+            long completeAnalysisElapsedTime = System.currentTimeMillis() - completeAnalysisStartTime;
             
-            // 7. 두 분석 결과 모두 데이터베이스에 저장
-            String sessionAnalysisId = saveSessionAnalysisResult(sessionAnalysis);
-            String completeAnalysisId = saveCompleteAnalysisResult(completeAnalysis);
+            // 전체 학습 분석 결과 상세 로그
+            log.info("   ├─ 📈 전체 학습 분석 결과 (기간: {} ~ {}):", 
+                analysisStartDate.toLocalDate(), analysisEndDate.toLocalDate());
+            log.info("   │  ├─ 전체 정답률: {:.2f}%", 
+                completeAnalysis.getOverallAccuracyRate() != null ? completeAnalysis.getOverallAccuracyRate() : 0.0);
+            log.info("   │  ├─ 평균 풀이 시간: {:.2f}초", 
+                completeAnalysis.getAverageSolvingTime() != null ? completeAnalysis.getAverageSolvingTime() : 0.0);
+            log.info("   │  ├─ 학습 빈도: {}", 
+                completeAnalysis.getStudyFrequency() != null ? completeAnalysis.getStudyFrequency() : "N/A");
+            log.info("   │  ├─ 선호 학습 시간: {}", 
+                completeAnalysis.getPreferredStudyTime() != null ? completeAnalysis.getPreferredStudyTime() : "N/A");
             
-            // 8. 통합 분석 완료 이벤트 발행 (다른 서비스들이 구독할 수 있도록)
+            // 문제 유형별 성과
+            if (completeAnalysis.getQuestionTypePerformances() != null && !completeAnalysis.getQuestionTypePerformances().isEmpty()) {
+                log.info("   │  ├─ 문제 유형별 성과 ({}개 유형):", completeAnalysis.getQuestionTypePerformances().size());
+                completeAnalysis.getQuestionTypePerformances().stream()
+                    .limit(5)
+                    .forEach(qtp -> 
+                        log.info("   │  │  ├─ {}: 정답률 {:.2f}%, 문제수 {}개", 
+                            qtp.getQuestionType(),
+                            qtp.getAccuracyRate() != null ? qtp.getAccuracyRate() : 0.0,
+                            qtp.getTotalQuestions() != null ? qtp.getTotalQuestions() : 0));
+                if (completeAnalysis.getQuestionTypePerformances().size() > 5) {
+                    log.info("   │  │  └─ ... 외 {}개 유형", completeAnalysis.getQuestionTypePerformances().size() - 5);
+                }
+            }
+            
+            // 복습/개선/강점 영역
+            if (completeAnalysis.getReviewRequiredTypes() != null && !completeAnalysis.getReviewRequiredTypes().isEmpty()) {
+                log.info("   │  ├─ 🔴 복습 필요 유형: {}", completeAnalysis.getReviewRequiredTypes());
+            }
+            if (completeAnalysis.getImprovementRequiredTypes() != null && !completeAnalysis.getImprovementRequiredTypes().isEmpty()) {
+                log.info("   │  ├─ 🟡 개선 필요 유형: {}", completeAnalysis.getImprovementRequiredTypes());
+            }
+            if (completeAnalysis.getStrengthTypes() != null && !completeAnalysis.getStrengthTypes().isEmpty()) {
+                log.info("   │  ├─ 🟢 강점 영역 유형: {}", completeAnalysis.getStrengthTypes());
+            }
+            if (completeAnalysis.getRecentWrongQuestionIds() != null && !completeAnalysis.getRecentWrongQuestionIds().isEmpty()) {
+                log.info("   │  ├─ 최근 오답 문제: {}개", completeAnalysis.getRecentWrongQuestionIds().size());
+            }
+            if (completeAnalysis.getLongIntervalTypes() != null && !completeAnalysis.getLongIntervalTypes().isEmpty()) {
+                log.info("   │  ├─ 학습 간격 긴 유형: {}", completeAnalysis.getLongIntervalTypes());
+            }
+            if (completeAnalysis.getSlowSolvingTypes() != null && !completeAnalysis.getSlowSolvingTypes().isEmpty()) {
+                log.info("   │  └─ 풀이 시간 긴 유형: {}", completeAnalysis.getSlowSolvingTypes());
+            }
+            
+            log.info("└─ ✅ 전체 학습 분석 완료 (정답률: {:.2f}%, 소요시간: {}ms)", 
+                completeAnalysis.getOverallAccuracyRate() != null ? completeAnalysis.getOverallAccuracyRate() : 0.0, 
+                completeAnalysisElapsedTime);
+            
+            log.info("┌─ [6단계] 데이터 및 분석 결과 저장");
+            long saveStartTime = System.currentTimeMillis();
+            
+            // 6-1. 원본 데이터 저장 (향후 분석을 위한 이력 데이터)
+            log.info("   ├─ 💾 세션 데이터 저장 중...");
+            learningSessionRepository.save(session);
+            log.info("   │  └─ ✅ 세션 저장 완료: sessionId={}", session.getSessionId());
+            
+            log.info("   ├─ 💾 답변 데이터 저장 중... ({}개)", questionAnswers.size());
+            questionAnswerRepository.saveAll(questionAnswers);
+            log.info("   │  └─ ✅ 답변 저장 완료: {}개", questionAnswers.size());
+            
+            if (!sessionEvents.isEmpty()) {
+                log.info("   ├─ 💾 이벤트 데이터 저장 중... ({}개)", sessionEvents.size());
+                sessionEventRepository.saveAll(sessionEvents);
+                log.info("   │  └─ ✅ 이벤트 저장 완료: {}개", sessionEvents.size());
+            }
+            
+            // 6-2. 분석 결과 저장
+            log.info("   ├─ 💾 개별 세션 분석 결과 저장 중...");
+            String sessionAnalysisId = saveSessionAnalysisResult(sessionAnalysis, session);
+            log.info("   ├─ 💾 전체 학습 분석 결과 저장 중...");
+            // analysisStartDate와 analysisEndDate는 5단계에서 이미 선언됨
+            String completeAnalysisId = saveCompleteAnalysisResult(completeAnalysis, analysisStartDate, analysisEndDate);
+            long saveElapsedTime = System.currentTimeMillis() - saveStartTime;
+            log.info("   ├─ 저장된 분석 ID:");
+            log.info("   │  ├─ 개별 세션 분석 ID: {}", sessionAnalysisId);
+            log.info("   │  └─ 전체 학습 분석 ID: {}", completeAnalysisId);
+            log.info("└─ ✅ 데이터 및 분석 결과 저장 완료 (개별분석ID: {}, 전체분석ID: {}, 소요시간: {}ms)", 
+                sessionAnalysisId, completeAnalysisId, saveElapsedTime);
+            
+            log.info("┌─ [7단계] 분석 완료 이벤트 발행");
+            long eventStartTime = System.currentTimeMillis();
+            double eventAccuracyRate = calculateAccuracyRate(sessionResult.getCorrectAnswers(), sessionResult.getTotalQuestions());
+            double eventAvgTimePerQuestion = calculateAverageTimePerQuestion(sessionResult.getTotalDuration(), sessionResult.getTotalQuestions());
+            
             Map<String, Object> additionalMetadata = Map.of(
                 "totalQuestions", sessionResult.getTotalQuestions(),
                 "correctAnswers", sessionResult.getCorrectAnswers(),
-                "accuracyRate", calculateAccuracyRate(sessionResult.getCorrectAnswers(), sessionResult.getTotalQuestions()),
+                "accuracyRate", eventAccuracyRate,
                 "totalTimeSpent", sessionResult.getTotalDuration(),
-                "averageTimePerQuestion", calculateAverageTimePerQuestion(sessionResult.getTotalDuration(), sessionResult.getTotalQuestions())
+                "averageTimePerQuestion", eventAvgTimePerQuestion
             );
+            
+            log.info("   ├─ 📤 발행할 이벤트 메타데이터:");
+            log.info("   │  ├─ 전체 문제: {}개", sessionResult.getTotalQuestions());
+            log.info("   │  ├─ 정답: {}개", sessionResult.getCorrectAnswers());
+            log.info("   │  ├─ 정답률: {:.2f}%", eventAccuracyRate);
+            log.info("   │  ├─ 총 소요시간: {}초", sessionResult.getTotalDuration());
+            log.info("   │  └─ 문제당 평균 시간: {:.2f}초", eventAvgTimePerQuestion);
+            log.info("   ├─ Kafka 토픽: learning-analysis-completed");
+            log.info("   ├─ userId: {}", userId);
+            log.info("   ├─ sessionId: {}", sessionId);
+            log.info("   ├─ sessionAnalysisId: {}", sessionAnalysisId);
+            log.info("   └─ completeAnalysisId: {}", completeAnalysisId);
             
             eventPublisher.publishIntegratedAnalysisCompletedEvent(
                 userId, sessionAnalysisId, completeAnalysisId, sessionId, additionalMetadata);
+            long eventElapsedTime = System.currentTimeMillis() - eventStartTime;
+            log.info("└─ ✅ 이벤트 발행 완료 (소요시간: {}ms)", eventElapsedTime);
             
-            log.info("학습 패턴 분석 완료 및 이벤트 발행: userId={}, sessionAnalysisId={}, completeAnalysisId={}, sessionId={}", 
-                userId, sessionAnalysisId, completeAnalysisId, sessionId);
+            long totalElapsedTime = System.currentTimeMillis() - startTime;
+            log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            log.info("🎉 [전체 완료] 학습 패턴 분석 및 이벤트 발행 완료");
+            log.info("   sessionId={}, userId={}", sessionId, userId);
+            log.info("   개별분석ID={}, 전체분석ID={}", sessionAnalysisId, completeAnalysisId);
+            log.info("   총 소요시간: {}ms", totalElapsedTime);
+            log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                 
         } catch (Exception e) {
-            log.error("학습 세션 완료 이벤트 처리 실패: sessionId={}, userId={}", 
-                event.getSessionId(), event.getUserId(), e);
+            long totalElapsedTime = System.currentTimeMillis() - startTime;
+            log.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            log.error("❌ [처리 실패] 학습 세션 완료 이벤트 처리 실패");
+            log.error("   sessionId: {}", sessionId);
+            log.error("   userId: {}", userId);
+            log.error("   소요시간: {}ms", totalElapsedTime);
+            log.error("   에러 타입: {}", e.getClass().getName());
+            log.error("   에러 메시지: {}", e.getMessage());
+            log.error("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            log.error("   스택 트레이스:");
+            log.error("   ", e);
+            log.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             
             // 이벤트 처리 실패 시 재시도 이벤트 발행 또는 에러 로깅
             handleEventProcessingFailure(event, e);
+            
+            // 예외를 다시 던지지 않아서 트랜잭션이 롤백되지 않도록 함
+            // (KafkaConsumer에서 이미 처리하므로)
         }
     }
 
@@ -156,15 +408,29 @@ public class LearningSessionEventListener {
     /**
      * 개별 세션 분석 결과 데이터베이스에 저장
      */
-    private String saveSessionAnalysisResult(LearningPatternAnalysisDTO analysis) {
+    private String saveSessionAnalysisResult(LearningPatternAnalysisDTO analysis, LearningSession session) {
         try {
+            LocalDateTime analyzedAt = analysis.getAnalyzedAt() != null 
+                ? analysis.getAnalyzedAt() 
+                : LocalDateTime.now();
+            
+            // 세션의 시작일과 종료일 사용 (없으면 analyzedAt 사용)
+            LocalDateTime startDate = session.getStartedAt() != null 
+                ? session.getStartedAt() 
+                : analyzedAt.minusHours(1); // 세션 시작일이 없으면 분석 시간 1시간 전
+            LocalDateTime endDate = session.getCompletedAt() != null 
+                ? session.getCompletedAt() 
+                : analyzedAt; // 세션 종료일이 없으면 분석 시간
+            
             // DTO를 엔티티로 변환 (기존 Entity 구조에 맞게)
             LearningPatternAnalysis entity = LearningPatternAnalysis.builder()
                 // === 기본 분석 정보 ===
                 .analysisType(analysis.getAnalysisType())                    // "SESSION_ANALYSIS" - 개별 세션 분석임을 구분
                 .userId(analysis.getUserId())                               // 사용자 ID - 누구의 분석 결과인지 식별
                 .sessionId(analysis.getSessionId())                         // 세션 ID - 어떤 학습 세션에 대한 분석인지 식별
-                .analyzedAt(analysis.getAnalyzedAt())                       // 분석 수행 시간 - 언제 분석이 완료되었는지 기록
+                .analyzedAt(analyzedAt)                                     // 분석 수행 시간 - 언제 분석이 완료되었는지 기록
+                .startDate(startDate)                                        // 세션 시작일
+                .endDate(endDate)                                            // 세션 종료일
                 
                 // === 기존 Entity 필드에 JSON 형태로 저장 ===
                 .questionTypePerformances(convertListToJson(analysis.getQuestionTypePerformances()))  // 문제 유형별 성과 통계 (JSON)
@@ -185,8 +451,20 @@ public class LearningSessionEventListener {
                 .build();
 
             // 데이터베이스에 저장
-            LearningPatternAnalysis savedAnalysis = analysisRepository.save(entity);
+            log.info("   ├─ 엔티티 생성 완료: analysisType={}, userId={}, sessionId={}, startDate={}, endDate={}", 
+                entity.getAnalysisType(), entity.getUserId(), entity.getSessionId(), 
+                entity.getStartDate(), entity.getEndDate());
             
+            log.info("   ├─ DB 저장 시도 중...");
+            LearningPatternAnalysis savedAnalysis = analysisRepository.save(entity);
+            log.info("   ├─ save() 메서드 호출 완료: analysisId={}", savedAnalysis.getAnalysisId());
+            
+            // 저장 후 즉시 flush하여 트랜잭션 커밋 전에 DB에 반영 확인
+            analysisRepository.flush();
+            log.info("   ├─ flush() 메서드 호출 완료");
+            
+            log.info("   ├─ DB 저장 완료: analysisId={}, userId={}", 
+                savedAnalysis.getAnalysisId(), savedAnalysis.getUserId());
             log.info("개별 세션 학습 패턴 분석 결과 저장 완료: analysisId={}, userId={}", 
                 savedAnalysis.getAnalysisId(), savedAnalysis.getUserId());
             
@@ -203,14 +481,22 @@ public class LearningSessionEventListener {
      * 전체 학습 완료 분석 결과 데이터베이스에 저장
      * 개별 세션 분석과 동일한 엔티티에 저장하되 analysisType으로 구분
      */
-    private String saveCompleteAnalysisResult(LearningPatternAnalysisDTO analysis) {
+    private String saveCompleteAnalysisResult(LearningPatternAnalysisDTO analysis, 
+                                             LocalDateTime startDate, 
+                                             LocalDateTime endDate) {
         try {
+            LocalDateTime analyzedAt = analysis.getAnalyzedAt() != null 
+                ? analysis.getAnalyzedAt() 
+                : LocalDateTime.now();
+            
             LearningPatternAnalysis entity = LearningPatternAnalysis.builder()
                     // === 기본 분석 정보 ===
                     .analysisType("COMPLETE_ANALYSIS")                      // "COMPLETE_ANALYSIS" - 전체 학습 기간 분석임을 구분
                     .userId(analysis.getUserId())                           // 사용자 ID - 누구의 전체 학습 분석 결과인지 식별
                     .sessionId(null)                                        // null - 전체 분석이므로 특정 세션에 속하지 않음
-                    .analyzedAt(analysis.getAnalyzedAt())                   // 분석 수행 시간 - 언제 전체 분석이 완료되었는지 기록
+                    .analyzedAt(analyzedAt)                                 // 분석 수행 시간 - 언제 전체 분석이 완료되었는지 기록
+                    .startDate(startDate)                                   // 분석 기간 시작일
+                    .endDate(endDate)                                       // 분석 기간 종료일
                     
                     // === 기존 Entity 필드에 JSON 형태로 저장 ===
                     .questionTypePerformances(convertListToJson(analysis.getQuestionTypePerformances()))  // 전체 기간 문제 유형별 성과 통계 (JSON)
@@ -231,8 +517,20 @@ public class LearningSessionEventListener {
                     .build();
 
             // 데이터베이스에 저장
-            LearningPatternAnalysis savedAnalysis = analysisRepository.save(entity);
+            log.info("   ├─ 엔티티 생성 완료: analysisType={}, userId={}, sessionId={}, startDate={}, endDate={}", 
+                entity.getAnalysisType(), entity.getUserId(), entity.getSessionId(), 
+                entity.getStartDate(), entity.getEndDate());
             
+            log.info("   ├─ DB 저장 시도 중...");
+            LearningPatternAnalysis savedAnalysis = analysisRepository.save(entity);
+            log.info("   ├─ save() 메서드 호출 완료: analysisId={}", savedAnalysis.getAnalysisId());
+            
+            // 저장 후 즉시 flush하여 트랜잭션 커밋 전에 DB에 반영 확인
+            analysisRepository.flush();
+            log.info("   ├─ flush() 메서드 호출 완료");
+            
+            log.info("   ├─ DB 저장 완료: analysisId={}, userId={}", 
+                savedAnalysis.getAnalysisId(), savedAnalysis.getUserId());
             log.info("전체 학습 완료 분석 결과 저장 완료: analysisId={}, userId={}", 
                 savedAnalysis.getAnalysisId(), savedAnalysis.getUserId());
             

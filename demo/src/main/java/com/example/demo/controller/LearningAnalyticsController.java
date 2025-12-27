@@ -36,7 +36,7 @@ import java.util.HashMap;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/learning-analytics")
+@RequestMapping("/analysis")
 @RequiredArgsConstructor
 public class LearningAnalyticsController {
 
@@ -52,7 +52,7 @@ public class LearningAnalyticsController {
     /**
      * 전체 학습 기간에 대한 패턴 분석 결과 조회
      * Problem Service에서 복습/오답 세션 문제 할당 시 사용
-     * GET /api/learning-analytics/users/{userId}/learning-pattern
+     * GET /analysis/users/{userId}/learning-pattern
      */
     @GetMapping("/users/{userId}/learning-pattern")
     public ResponseEntity<LearningPatternAnalysisDTO> getCompleteLearningPattern(
@@ -84,7 +84,7 @@ public class LearningAnalyticsController {
     /**
      * 개별 세션에 대한 패턴 분석 결과 조회
      * Problem Service에서 특정 세션 기반 문제 할당 시 사용
-     * GET /api/learning-analytics/users/{userId}/sessions/{sessionId}/learning-pattern
+     * GET /analysis/users/{userId}/sessions/{sessionId}/learning-pattern
      */
     @GetMapping("/users/{userId}/sessions/{sessionId}/learning-pattern")
     public ResponseEntity<LearningPatternAnalysisDTO> getSessionLearningPattern(    
@@ -142,7 +142,7 @@ public class LearningAnalyticsController {
     /**
      * 최근 학습 패턴 분석 결과 조회 (캐시된 데이터)
      * 빠른 응답이 필요한 경우 사용
-     * GET /api/learning-analytics/users/{userId}/learning-pattern/recent
+     * GET /analysis/users/{userId}/learning-pattern/recent
      */
     @GetMapping("/users/{userId}/learning-pattern/recent")
     public ResponseEntity<LearningPatternAnalysisDTO> getRecentLearningPattern(
@@ -189,7 +189,7 @@ public class LearningAnalyticsController {
     /**
      * 사용자 학습 분석 데이터 조회 (뷰 기반)
      * user_learning_analytics 뷰에서 직접 조회하여 빠른 응답
-     * GET /api/learning-analytics/users/{userId}/analytics
+     * GET /analysis/users/{userId}/analytics
      */
     @GetMapping("/users/{userId}/analytics")
     public ResponseEntity<Map<String, Object>> getUserAnalytics(@PathVariable String userId) {
@@ -207,9 +207,9 @@ public class LearningAnalyticsController {
     /**
      * 카테고리별 성과 데이터 조회 (뷰 기반)
      * category_performance_view 뷰에서 직접 조회
-     * GET /api/learning-analytics/users/{userId}/category-performance
+     * GET /analysis/users/{userId}/weakness-distribution
      */
-    @GetMapping("/users/{userId}/category-performance")
+    @GetMapping("/users/{userId}/weakness-distribution")
     public ResponseEntity<List<Map<String, Object>>> getCategoryPerformance(@PathVariable String userId) {
         log.info("카테고리별 성과 데이터 조회: userId={}", userId);
         
@@ -225,7 +225,7 @@ public class LearningAnalyticsController {
     /**
      * 난이도별 성취도 데이터 조회 (뷰 기반)
      * difficulty_achievement_view 뷰에서 직접 조회
-     * GET /api/learning-analytics/users/{userId}/difficulty-achievement
+     * GET /analysis/users/{userId}/difficulty-achievement
      */
     @GetMapping("/users/{userId}/difficulty-achievement")
     public ResponseEntity<List<Map<String, Object>>> getDifficultyAchievement(@PathVariable String userId) {
@@ -243,7 +243,7 @@ public class LearningAnalyticsController {
     /**
      * 문제 통계 데이터 조회 (뷰 기반) -- 관리자용 
      * question_stats_view 뷰에서 직접 조회
-     * GET /api/learning-analytics/question-stats
+     * GET /analysis/question-stats
      */
     @GetMapping("/question-stats")
     public ResponseEntity<List<Map<String, Object>>> getQuestionStats() {
@@ -261,7 +261,7 @@ public class LearningAnalyticsController {
     /**
      * 저장된 학습 패턴 분석 결과 조회
      * learning_pattern_analysis 테이블에서 조회
-     * GET /api/learning-analytics/users/{userId}/stored-pattern/{analysisType} ex)  PERIOD_ANALYSIS, SESSION_ANALYSIS
+     * GET /analysis/users/{userId}/stored-pattern/{analysisType} ex)  PERIOD_ANALYSIS, SESSION_ANALYSIS
      */
     @GetMapping("/users/{userId}/stored-pattern/{analysisType}")
     public ResponseEntity<Map<String, Object>> getStoredLearningPattern(
@@ -282,7 +282,7 @@ public class LearningAnalyticsController {
 
     /**
      * 학습 성과 카드 데이터 조회 (대시보드 상단 요약 카드용)
-     * GET /api/learning-analytics/users/{userId}/performance-card
+     * GET /analysis/users/{userId}/performance-card
      */
     @GetMapping("/users/{userId}/performance-card")
     public ResponseEntity<PerformanceCard> getPerformanceCard(
@@ -303,35 +303,72 @@ public class LearningAnalyticsController {
 
     /**
      * 주간 학습 추이 그래프 데이터 조회 (라인 차트용)
-     * GET /api/learning-analytics/users/{userId}/weekly-trend
+     * GET /analysis/users/{userId}/weekly-trend
+     * GET /analysis/users/{userId}/weekly-stats/recent
+     * GET /analysis/users/{userId}/weekly-graph
+     * 
+     * 여러 프론트엔드 경로를 지원하는 통합 엔드포인트
      */
-    @GetMapping("/users/{userId}/weekly-trend")
+    @GetMapping({
+        "/users/{userId}/weekly-trend",
+        "/users/{userId}/weekly-stats/recent",
+        "/users/{userId}/weekly-graph"
+    })
     public ResponseEntity<List<WeeklyTrendData>> getWeeklyTrend(
             @PathVariable String userId,
-            @RequestParam(required = false) Integer weeks) {
+            @RequestParam(required = false) Integer weeks,
+            @RequestParam(required = false) LocalDate weekStartDate) {
         
-        log.info("주간 학습 추이 데이터 조회: userId={}, weeks={}", userId, weeks);
+        log.info("주간 학습 추이 데이터 조회: userId={}, weeks={}, weekStartDate={}", 
+            userId, weeks, weekStartDate);
         
+        // weekStartDate는 참고용 (현재 로직은 최근 N주 방식)
         List<WeeklyTrendData> trendData = learningAnalyticsService.getWeeklyTrend(userId, weeks);
         return ResponseEntity.ok(trendData);
     }
 
     /**
      * 일별 학습 활동 히트맵 데이터 조회 (캘린더 히트맵용)
-     * GET /api/learning-analytics/users/{userId}/daily-activity
+     * GET /analysis/users/{userId}/daily-activity
+     * GET /analysis/users/{userId}/calendar-heatmap
+     * 
+     * 여러 프론트엔드 경로를 지원하는 통합 엔드포인트
+     * - fromDate, toDate 파라미터 또는
+     * - year, month 파라미터 사용 가능
      */
-    @GetMapping("/users/{userId}/daily-activity")
+    @GetMapping({
+        "/users/{userId}/daily-activity",
+        "/users/{userId}/calendar-heatmap"
+    })
     public ResponseEntity<List<DailyActivityData>> getDailyActivity(
             @PathVariable String userId,
             @RequestParam(required = false) LocalDate fromDate,
-            @RequestParam(required = false) LocalDate toDate) {
+            @RequestParam(required = false) LocalDate toDate,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
         
-        log.info("일별 학습 활동 히트맵 데이터 조회: userId={}, fromDate={}, toDate={}", 
-            userId, fromDate, toDate);
+        log.info("일별 학습 활동 히트맵 데이터 조회: userId={}, fromDate={}, toDate={}, year={}, month={}", 
+            userId, fromDate, toDate, year, month);
         
+        LocalDate startDate;
+        LocalDate endDate;
+        
+        // year/month 파라미터가 있으면 우선 사용
+        if (year != null && month != null) {
+            startDate = LocalDate.of(year, month, 1);
+            endDate = startDate.plusMonths(1).minusDays(1);
+            log.info("year/month 파라미터 사용: fromDate={}, toDate={}", startDate, endDate);
+        } 
+        // fromDate/toDate 파라미터 사용
+        else if (fromDate != null || toDate != null) {
+            startDate = fromDate != null ? fromDate : LocalDate.now().minusDays(29);
+            endDate = toDate != null ? toDate : LocalDate.now();
+        }
         // 기본값: 최근 30일
-        LocalDate startDate = fromDate != null ? fromDate : LocalDate.now().minusDays(29);
-        LocalDate endDate = toDate != null ? toDate : LocalDate.now();
+        else {
+            startDate = LocalDate.now().minusDays(29);
+            endDate = LocalDate.now();
+        }
         
         List<DailyActivityData> activityData = learningAnalyticsService.getDailyActivity(userId, startDate, endDate);
         return ResponseEntity.ok(activityData);
@@ -339,9 +376,9 @@ public class LearningAnalyticsController {
 
     /**
      * 문제 유형별 성과 차트 데이터 조회 (도넛/바 차트용)
-     * GET /api/learning-analytics/users/{userId}/question-type-chart
+     * GET /analysis/users/{userId}/question-type-accuracy
      */
-    @GetMapping("/users/{userId}/question-type-chart")
+    @GetMapping("/users/{userId}/question-type-accuracy")
     public ResponseEntity<List<QuestionTypeChartData>> getQuestionTypeChart(
             @PathVariable String userId,
             @RequestParam(required = false) LocalDate fromDate,
@@ -362,7 +399,7 @@ public class LearningAnalyticsController {
 
     /**
      * 특정 사용자의 모든 학습 세션에 대한 총 학습 시간 조회
-     * GET /api/learning-analytics/users/{userId}/total-learning-time
+     * GET /analysis/users/{userId}/total-learning-time
      */
     @GetMapping("/users/{userId}/total-learning-time")
     public ResponseEntity<Map<String, Object>> getTotalLearningTime(@PathVariable String userId) {
@@ -431,7 +468,7 @@ public class LearningAnalyticsController {
 
     /**
      * 특정 사용자의 월별 학습 시간 통계 조회
-     * GET /api/learning-analytics/users/{userId}/monthly-learning-time
+     * GET /analysis/users/{userId}/monthly-learning-time
      */
     @GetMapping("/users/{userId}/monthly-learning-time")
     public ResponseEntity<Map<String, Object>> getMonthlyLearningTime(@PathVariable String userId) {

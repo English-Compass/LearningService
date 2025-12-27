@@ -148,7 +148,7 @@ public class LearningPatternAnalysisService {
             List<QuestionAnswer> typeAnswers;
             
             if (sessionId != null) {
-                // 세션별 분석
+                // 세션별 분석 (questionType은 String으로 저장됨)
                 typeAnswers = questionAnswerRepository.findBySessionIdAndQuestionType(sessionId, type.name());
             } else {
                 // 사용자별 기간별 분석

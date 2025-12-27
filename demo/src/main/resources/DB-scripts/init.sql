@@ -19,34 +19,11 @@
 -- DROP TABLE IF EXISTS question;
 
 -- =====================================================
--- 1. 문제 테이블 (Question)
+-- 1. 문제 테이블 (Question) - 제거됨
+-- ProblemService에서 관리하므로 LearningService에서는 불필요
+-- question_answer 테이블에 문제 메타데이터(questionType, category, difficulty) 저장
 -- =====================================================
-CREATE TABLE IF NOT EXISTS question (
-    question_id VARCHAR(255) NOT NULL PRIMARY KEY,
-    question_text TEXT NOT NULL COMMENT '문제 내용',
-    option_a VARCHAR(500) NOT NULL COMMENT '선택지 A',
-    option_b VARCHAR(500) NOT NULL COMMENT '선택지 B', 
-    option_c VARCHAR(500) NOT NULL COMMENT '선택지 C',
-    correct_answer VARCHAR(1) NOT NULL COMMENT '정답 (A, B, C)',
-    
-    -- 카테고리 정보
-    major_category VARCHAR(50) NOT NULL COMMENT '대분류',
-    minor_category VARCHAR(50) NOT NULL COMMENT '소분류',
-    question_type VARCHAR(50) NOT NULL COMMENT '문제 유형',
-    
-    -- 메타데이터
-    explanation TEXT COMMENT '문제 해설',
-    difficulty_level INT NOT NULL DEFAULT 1 COMMENT '난이도 (1: 초급, 2: 중급, 3: 상급)',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    
-    -- 인덱스
-    INDEX idx_question_major_category (major_category),
-    INDEX idx_question_minor_category (minor_category),
-    INDEX idx_question_type (question_type),
-    INDEX idx_question_difficulty (difficulty_level),
-    INDEX idx_question_category_combo (major_category, minor_category, difficulty_level)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='문제 마스터 테이블';
+-- CREATE TABLE IF NOT EXISTS question (...) - 제거됨
 
 -- =====================================================
 -- 2. 학습 세션 테이블 (LearningSession)
@@ -76,27 +53,10 @@ CREATE TABLE IF NOT EXISTS learning_sessions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='학습 세션 테이블';
 
 -- =====================================================
--- 3. 세션-문제 연결 테이블 (SessionQuestion)
+-- 3. 세션-문제 연결 테이블 (SessionQuestion) - 제거됨
+-- ProblemService에서 관리하므로 불필요
 -- =====================================================
-CREATE TABLE IF NOT EXISTS session_question (
-    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    session_id VARCHAR(255) NOT NULL COMMENT '세션 ID',
-    question_id VARCHAR(255) NOT NULL COMMENT '문제 ID',
-    question_order INT NOT NULL COMMENT '문제 순서 (1, 2, 3, ...)',
-    
-    -- 외래키 제약조건
-    FOREIGN KEY (session_id) REFERENCES learning_sessions(session_id) ON DELETE CASCADE,
-    FOREIGN KEY (question_id) REFERENCES question(question_id) ON DELETE CASCADE,
-    
-    -- 유니크 제약조건
-    UNIQUE KEY uk_session_question (session_id, question_id),
-    UNIQUE KEY uk_session_order (session_id, question_order),
-    
-    -- 인덱스
-    INDEX idx_session_question_session (session_id),
-    INDEX idx_session_question_question (question_id),
-    INDEX idx_session_question_order (session_id, question_order)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='세션별 문제 할당 테이블';
+-- CREATE TABLE IF NOT EXISTS session_question (...) - 제거됨
 
 -- =====================================================
 -- 4. 문제 답변 테이블 (QuestionAnswer)
@@ -104,8 +64,14 @@ CREATE TABLE IF NOT EXISTS session_question (
 CREATE TABLE IF NOT EXISTS question_answer (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     session_id VARCHAR(255) NOT NULL COMMENT '세션 ID',
-    question_id VARCHAR(255) NOT NULL COMMENT '문제 ID',
+    question_id VARCHAR(255) NOT NULL COMMENT '문제 ID (ProblemService 참조)',
     session_type VARCHAR(50) NOT NULL COMMENT '세션 타입',
+    
+    -- ProblemService에서 받은 문제 메타데이터 (분석용)
+    question_type VARCHAR(50) COMMENT '문제 유형',
+    major_category VARCHAR(50) COMMENT '대분류',
+    minor_category VARCHAR(50) COMMENT '소분류',
+    difficulty_level INT COMMENT '난이도 (1~3)',
     
     -- 답변 정보
     user_answer VARCHAR(1) NOT NULL COMMENT '사용자 답변 (A, B, C)',
@@ -114,12 +80,11 @@ CREATE TABLE IF NOT EXISTS question_answer (
     answered_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '답변 시간',
     solve_count INT NOT NULL DEFAULT 1 COMMENT '해당 문제 풀이 횟수',
     
-    -- 외래키 제약조건
+    -- 외래키 제약조건 (learning_sessions만 참조, question은 ProblemService에서 관리)
     FOREIGN KEY (session_id) REFERENCES learning_sessions(session_id) ON DELETE CASCADE,
-    FOREIGN KEY (question_id) REFERENCES question(question_id) ON DELETE CASCADE,
     
     -- 유니크 제약조건 (한 세션에서 같은 문제는 한 번만 답변)
-    UNIQUE KEY uk_session_question_answer (session_id, question_id,session_type),
+    UNIQUE KEY uk_session_question_answer (session_id, question_id, session_type),
     
     -- 인덱스
     INDEX idx_question_answer_session (session_id),
@@ -127,9 +92,12 @@ CREATE TABLE IF NOT EXISTS question_answer (
     INDEX idx_question_answer_correct (is_correct),
     INDEX idx_question_answer_time (time_spent),
     INDEX idx_question_answer_answered_at (answered_at),
-    INDEX idx_question_answer_user_session (session_id),
+    INDEX idx_question_answer_type (question_type),
+    INDEX idx_question_answer_major_category (major_category),
+    INDEX idx_question_answer_minor_category (minor_category),
+    INDEX idx_question_answer_difficulty (difficulty_level),
     INDEX idx_question_answer_combo (question_id, is_correct, time_spent)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='사용자 문제 답변 테이블';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='사용자 문제 답변 테이블 (문제 메타데이터 포함)';
 
 -- =====================================================
 -- 5. 사용자 프로필 테이블 (UserProfile)
@@ -182,7 +150,14 @@ CREATE TABLE IF NOT EXISTS learning_session_events (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     
     FOREIGN KEY (session_id) REFERENCES learning_sessions(session_id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+    -- 마이크로서비스 환경에서는 user_id 외래키 제약 조건 제거
+    -- ProblemService에서 받은 userId가 user_profiles에 없을 수 있음
+    -- FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+    
+    -- 인덱스 추가
+    INDEX idx_learning_session_events_user (user_id),
+    INDEX idx_learning_session_events_session (session_id),
+    INDEX idx_learning_session_events_type (event_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='학습 세션 이벤트 테이블';
 
 -- =====================================================
@@ -203,19 +178,28 @@ CREATE TABLE IF NOT EXISTS learning_pattern_analysis (
     performance_analysis TEXT COMMENT '성과 분석 (JSON)',
     question_type_performances TEXT COMMENT '문제 유형별 성과 (JSON)',
 
-    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+    -- 마이크로서비스 환경에서는 외래키 제약 조건 제거
+    -- ProblemService에서 받은 userId가 user_profiles에 없을 수 있음
+    -- FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+    
+    -- 인덱스 추가
+    INDEX idx_learning_pattern_analysis_user (user_id),
+    INDEX idx_learning_pattern_analysis_session (session_id),
+    INDEX idx_learning_pattern_analysis_type (analysis_type),
+    INDEX idx_learning_pattern_analysis_analyzed (analyzed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='학습 패턴 분석 결과 테이블';
 
 
 -- =====================================================
 -- 10. 문제 통계 뷰 (QuestionStatsView)
+-- Question 테이블 없이 question_answer의 메타데이터 사용
 -- =====================================================
 CREATE OR REPLACE VIEW question_stats_view AS
 SELECT 
-    q.question_id,
-    q.question_type,
-    q.major_category as category,
-    q.difficulty_level,
+    qa.question_id,
+    qa.question_type,
+    qa.major_category as category,
+    qa.difficulty_level,
     
     -- 기본 통계
     COUNT(qa.id) as total_solve_count,
@@ -236,10 +220,9 @@ SELECT
     -- 고유 사용자 수
     COUNT(DISTINCT ls.user_id) as distinct_user_count
     
-FROM question q
-LEFT JOIN question_answer qa ON q.question_id = qa.question_id
+FROM question_answer qa
 LEFT JOIN learning_sessions ls ON qa.session_id = ls.session_id
-GROUP BY q.question_id, q.question_type, q.major_category, q.difficulty_level;
+GROUP BY qa.question_id, qa.question_type, qa.major_category, qa.difficulty_level;
 
 -- =====================================================
 -- 11. 사용자 학습 분석 뷰 (User Learning Analytics)
@@ -292,12 +275,13 @@ GROUP BY ls.user_id;
 
 -- =====================================================
 -- 12. 카테고리별 성과 뷰 (Category Performance View)
+-- Question 테이블 없이 question_answer의 메타데이터 사용
 -- =====================================================
 CREATE OR REPLACE VIEW category_performance_view AS
 SELECT 
     ls.user_id,
-    q.major_category,
-    q.minor_category,
+    qa.major_category,
+    qa.minor_category,
     
     -- 카테고리별 통계
     COUNT(qa.id) as questions_solved,
@@ -317,16 +301,16 @@ SELECT
     
 FROM learning_sessions ls
 JOIN question_answer qa ON ls.session_id = qa.session_id
-JOIN question q ON qa.question_id = q.question_id
-GROUP BY ls.user_id, q.major_category, q.minor_category;
+GROUP BY ls.user_id, qa.major_category, qa.minor_category;
 
 -- =====================================================
 -- 13. 난이도별 성취도 뷰 (Difficulty Achievement View)
+-- Question 테이블 없이 question_answer의 메타데이터 사용
 -- =====================================================
 CREATE OR REPLACE VIEW difficulty_achievement_view AS
 SELECT 
     ls.user_id,
-    q.difficulty_level,
+    qa.difficulty_level,
     
     -- 난이도별 통계
     COUNT(qa.id) as questions_solved,
@@ -346,8 +330,7 @@ SELECT
     
 FROM learning_sessions ls
 JOIN question_answer qa ON ls.session_id = qa.session_id
-JOIN question q ON qa.question_id = q.question_id
-GROUP BY ls.user_id, q.difficulty_level;
+GROUP BY ls.user_id, qa.difficulty_level;
 
 -- =====================================================
 -- DDL 스크립트 완료
