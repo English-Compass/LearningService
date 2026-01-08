@@ -558,38 +558,10 @@ docker pull yourusername/learning-service:latest
 
 ---
 
-## 👨‍💻 개발자
-
-**이현종** (Lee Hyun Jong)
-
-- 📧 Email: your.email@example.com
-- 💼 LinkedIn: [Your LinkedIn Profile]
-- 🐙 GitHub: [@yourusername](https://github.com/yourusername)
-
----
-
-## 📄 라이선스
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 감사의 말
-
-이 프로젝트는 실제 MSA 환경에서의 이벤트 기반 아키텍처를 학습하고 적용하기 위해 개발되었습니다.
-
 **사용된 오픈소스:**
 - Spring Framework Team
 - Apache Kafka Community
 - MySQL Development Team
 
 ---
-
-<div align="center">
-
-**⭐ Star this repository if you find it helpful!**
-
-Made with ❤️ by [Your Name]
-
-</div>
 
