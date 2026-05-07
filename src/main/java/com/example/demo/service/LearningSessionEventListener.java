@@ -315,6 +315,7 @@ public class LearningSessionEventListener {
                 .userId(event.getUserId())
                 .sessionType(event.getSessionType() != null ? event.getSessionType().name() : null)
                 .status("COMPLETED")
+                .startedAt(event.getStartedAt() != null ? event.getStartedAt() : event.getCompletedAt())
                 .completedAt(event.getCompletedAt())
                 .build();
 
