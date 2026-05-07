@@ -66,51 +66,13 @@ public class LearningSessionEventListener {
             log.info("   completedAt: {}", event.getCompletedAt());
             log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             
-            log.info("┌─ [1단계] ProblemService API 호출");
-            log.info("   ├─ 📞 API 호출 시작: sessionId={}, userId={}", sessionId, userId);
+            log.info("┌─ [1단계] 이벤트 데이터에서 세션 정보 구성 (REST 호출 없음)");
             long apiStartTime = System.currentTimeMillis();
-            SessionDataResponseDto sessionData = problemServiceClient.getSessionData(sessionId, userId);
+            SessionDataResponseDto sessionData = buildSessionDataFromEvent(event);
             long apiElapsedTime = System.currentTimeMillis() - apiStartTime;
-            
-            // 받은 데이터 상세 로그
-            log.info("   ├─ 📥 API 응답 데이터 수신 완료");
-            if (sessionData != null) {
-                log.info("   ├─ 📥 받은 데이터 상세:");
-                if (sessionData.getSession() != null) {
-                    log.info("   │  ├─ 세션 정보:");
-                    log.info("   │  │  ├─ sessionId: {}", sessionData.getSession().getSessionId());
-                    log.info("   │  │  ├─ userId: {}", sessionData.getSession().getUserId());
-                    log.info("   │  │  ├─ sessionType: {}", sessionData.getSession().getSessionType());
-                    log.info("   │  │  └─ status: {}", sessionData.getSession().getStatus());
-                    log.info("   │  ├─ 세션 시간:");
-                    log.info("   │  │  ├─ startedAt: {}", sessionData.getSession().getStartedAt());
-                    log.info("   │  │  └─ completedAt: {}", sessionData.getSession().getCompletedAt());
-                } else {
-                    log.warn("   │  ⚠️  세션 정보가 null입니다");
-                }
-                
-                int questionCount = sessionData.getQuestions() != null ? sessionData.getQuestions().size() : 0;
-                int eventCount = sessionData.getEvents() != null ? sessionData.getEvents().size() : 0;
-                log.info("   │  ├─ 문제 수: {}개", questionCount);
-                log.info("   │  └─ 이벤트 수: {}개", eventCount);
-                
-                // 문제별 상세 정보 (최대 5개만)
-                if (sessionData.getQuestions() != null && !sessionData.getQuestions().isEmpty()) {
-                    log.info("   │  └─ 문제 상세 (최대 5개):");
-                    sessionData.getQuestions().stream()
-                        .limit(5)
-                        .forEach(q -> log.info("   │     ├─ questionId={}, questionType={}, isCorrect={}, timeSpent={}초", 
-                            q.getQuestionId(), q.getQuestionType(), q.getIsCorrect(), q.getTimeSpent()));
-                    if (sessionData.getQuestions().size() > 5) {
-                        log.info("   │     └─ ... 외 {}개 문제", sessionData.getQuestions().size() - 5);
-                    }
-                } else {
-                    log.warn("   │  ⚠️  문제 목록이 비어있습니다");
-                }
-            } else {
-                log.error("   │  ❌ API 응답 데이터가 null입니다!");
-            }
-            log.info("└─ ✅ API 호출 완료 (소요시간: {}ms)", apiElapsedTime);
+
+            int questionCount = sessionData.getQuestions() != null ? sessionData.getQuestions().size() : 0;
+            log.info("└─ ✅ 세션 데이터 구성 완료: questions={}개, 소요시간={}ms", questionCount, apiElapsedTime);
             
             log.info("┌─ [2단계] API 응답을 엔티티로 매핑");
             long mappingStartTime = System.currentTimeMillis();
@@ -301,33 +263,15 @@ public class LearningSessionEventListener {
             log.info("└─ ✅ 데이터 및 분석 결과 저장 완료 (개별분석ID: {}, 전체분석ID: {}, 소요시간: {}ms)", 
                 sessionAnalysisId, completeAnalysisId, saveElapsedTime);
             
-            log.info("┌─ [7단계] 분석 완료 이벤트 발행");
+            log.info("┌─ [7단계] 분석 완료 이벤트 발행 (분석 데이터 포함)");
             long eventStartTime = System.currentTimeMillis();
-            double eventAccuracyRate = calculateAccuracyRate(sessionResult.getCorrectAnswers(), sessionResult.getTotalQuestions());
-            double eventAvgTimePerQuestion = calculateAverageTimePerQuestion(sessionResult.getTotalDuration(), sessionResult.getTotalQuestions());
-            
-            Map<String, Object> additionalMetadata = Map.of(
-                "totalQuestions", sessionResult.getTotalQuestions(),
-                "correctAnswers", sessionResult.getCorrectAnswers(),
-                "accuracyRate", eventAccuracyRate,
-                "totalTimeSpent", sessionResult.getTotalDuration(),
-                "averageTimePerQuestion", eventAvgTimePerQuestion
-            );
-            
-            log.info("   ├─ 📤 발행할 이벤트 메타데이터:");
-            log.info("   │  ├─ 전체 문제: {}개", sessionResult.getTotalQuestions());
-            log.info("   │  ├─ 정답: {}개", sessionResult.getCorrectAnswers());
-            log.info("   │  ├─ 정답률: {:.2f}%", eventAccuracyRate);
-            log.info("   │  ├─ 총 소요시간: {}초", sessionResult.getTotalDuration());
-            log.info("   │  └─ 문제당 평균 시간: {:.2f}초", eventAvgTimePerQuestion);
-            log.info("   ├─ Kafka 토픽: learning-analysis-completed");
-            log.info("   ├─ userId: {}", userId);
-            log.info("   ├─ sessionId: {}", sessionId);
-            log.info("   ├─ sessionAnalysisId: {}", sessionAnalysisId);
-            log.info("   └─ completeAnalysisId: {}", completeAnalysisId);
-            
-            eventPublisher.publishIntegratedAnalysisCompletedEvent(
-                userId, sessionAnalysisId, completeAnalysisId, sessionId, additionalMetadata);
+
+            eventPublisher.publishWithAnalysisData(
+                userId, sessionAnalysisId, completeAnalysisId, sessionId,
+                completeAnalysis,
+                sessionResult.getTotalDuration(),
+                sessionResult.getTotalQuestions());
+
             long eventElapsedTime = System.currentTimeMillis() - eventStartTime;
             log.info("└─ ✅ 이벤트 발행 완료 (소요시간: {}ms)", eventElapsedTime);
             
@@ -359,6 +303,43 @@ public class LearningSessionEventListener {
             // 예외를 다시 던지지 않아서 트랜잭션이 롤백되지 않도록 함
             // (KafkaConsumer에서 이미 처리하므로)
         }
+    }
+
+    /**
+     * Kafka 이벤트 데이터로 SessionDataResponseDto를 구성 (ProblemService REST 호출 대체)
+     * 이벤트에 answers가 없으면 빈 DTO 반환 (분석은 데이터 없음 처리)
+     */
+    private SessionDataResponseDto buildSessionDataFromEvent(com.example.demo.dto.LearningCompletedEvent event) {
+        SessionDataResponseDto.SessionDto sessionDto = SessionDataResponseDto.SessionDto.builder()
+                .sessionId(event.getSessionId())
+                .userId(event.getUserId())
+                .sessionType(event.getSessionType() != null ? event.getSessionType().name() : null)
+                .status("COMPLETED")
+                .completedAt(event.getCompletedAt())
+                .build();
+
+        java.util.List<SessionDataResponseDto.QuestionAnswerDto> questionDtos =
+                event.getAnswers() == null ? java.util.Collections.emptyList() :
+                event.getAnswers().stream()
+                        .map(a -> SessionDataResponseDto.QuestionAnswerDto.builder()
+                                .questionId(a.getQuestionId())
+                                .questionType(a.getQuestionType())
+                                .majorCategory(a.getMajorCategory())
+                                .minorCategory(a.getMinorCategory())
+                                .difficultyLevel(a.getDifficultyLevel())
+                                .userAnswer(a.getUserAnswer())
+                                .isCorrect(a.getIsCorrect())
+                                .timeSpent(a.getTimeSpent())
+                                .answeredAt(a.getAnsweredAt())
+                                .solveCount(a.getSolveCount())
+                                .build())
+                        .collect(java.util.stream.Collectors.toList());
+
+        return SessionDataResponseDto.builder()
+                .session(sessionDto)
+                .questions(questionDtos)
+                .events(java.util.Collections.emptyList())
+                .build();
     }
 
     /**

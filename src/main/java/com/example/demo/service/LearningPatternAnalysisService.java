@@ -137,38 +137,37 @@ public class LearningPatternAnalysisService {
         return analyzeQuestionTypePerformanceCommon(null, userId, startDate, endDate);
     }
 
+    // ProblemService가 저장하는 실제 question_type 값 (소문자)
+    private static final List<String> STORED_QUESTION_TYPES = Arrays.asList("word", "sentence", "conversation");
+
     /**
-     * 문제 유형별 성과 분석 - 공통 로직 (중복 제거)
+     * 문제 유형별 성과 분석 - 공통 로직
+     * DB에 저장된 실제 타입명(word/sentence/conversation)으로 쿼리
      */
-    private List<QuestionTypePerformance> analyzeQuestionTypePerformanceCommon(String sessionId, String userId, 
-                                                                             LocalDateTime startDate, LocalDateTime endDate) {
+    private List<QuestionTypePerformance> analyzeQuestionTypePerformanceCommon(String sessionId, String userId,
+                                                                               LocalDateTime startDate, LocalDateTime endDate) {
         List<QuestionTypePerformance> performances = new ArrayList<>();
-        
-        for (QuestionCategory.QuestionType type : QuestionCategory.QuestionType.values()) {
+
+        for (String typeName : STORED_QUESTION_TYPES) {
             List<QuestionAnswer> typeAnswers;
-            
+
             if (sessionId != null) {
-                // 세션별 분석 (questionType은 String으로 저장됨)
-                typeAnswers = questionAnswerRepository.findBySessionIdAndQuestionType(sessionId, type.name());
+                typeAnswers = questionAnswerRepository.findBySessionIdAndQuestionType(sessionId, typeName);
             } else {
-                // 사용자별 기간별 분석
-                // QuestionAnswer에는 userId가 없으므로 sessionId를 통해 조회
                 typeAnswers = new ArrayList<>();
-                List<LearningSession> userSessions = learningSessionRepository.findByUserIdAndStartedAtBetweenOrderByCreatedAtDesc(
-                    userId, startDate, endDate);
+                List<LearningSession> userSessions = learningSessionRepository
+                    .findByUserIdAndStartedAtBetweenOrderByCreatedAtDesc(userId, startDate, endDate);
                 for (LearningSession session : userSessions) {
-                    List<QuestionAnswer> sessionAnswers = questionAnswerRepository.findBySessionIdAndQuestionType(
-                        session.getSessionId(), type.name());
-                    typeAnswers.addAll(sessionAnswers);
+                    typeAnswers.addAll(questionAnswerRepository.findBySessionIdAndQuestionType(
+                        session.getSessionId(), typeName));
                 }
             }
-            
+
             if (!typeAnswers.isEmpty()) {
-                QuestionTypePerformance performance = buildQuestionTypePerformance(typeAnswers, type.name());
-                performances.add(performance);
+                performances.add(buildQuestionTypePerformance(typeAnswers, typeName));
             }
         }
-        
+
         return performances;
     }
 

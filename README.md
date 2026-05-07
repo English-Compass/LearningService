@@ -38,6 +38,7 @@
 - **📈 데이터 시각화**: 대시보드용 다양한 분석 데이터 제공
 - **⚡ 고성능 처리**: Redis 캐싱 및 DB View 기반 집계
 - **🔄 이벤트 기반 아키텍처**: 느슨한 결합의 마이크로서비스 구조
+- **📝 체계적인 로깅**: 378+ 로깅 포인트로 전 과정 추적 가능
 - **🐳 완전한 컨테이너화**: Docker 기반 배포 및 운영
 
 ---
@@ -116,13 +117,16 @@
 ### Infrastructure & DevOps
 - **Docker** - 컨테이너 기반 배포
 - **GitHub Actions** - CI/CD 자동화
-  - 자동 빌드 및 테스트
-  - Docker Hub 자동 배포
+  - 자동 빌드 및 Docker Hub 배포
 - **API Gateway (Spring Cloud Gateway)** - 서비스 라우팅 및 인증
 
-### Monitoring & Health Check
-- **Spring Boot Actuator** - 헬스 체크 및 메트릭 수집
-- **Structured Logging** - 디버깅 및 모니터링 최적화
+### Logging & Health Check
+- **Spring Boot Actuator** - 헬스 체크 엔드포인트
+- **SLF4J + Logback** - 구조화된 애플리케이션 로깅
+  - **378+ 로깅 포인트**로 상세한 디버깅 지원
+  - Kafka 이벤트 처리 전 과정 추적
+  - API 호출 및 에러 상황별 로깅
+  - 6단계 분석 프로세스 실시간 모니터링
 
 ---
 
@@ -228,8 +232,9 @@ public SessionDataResponseDto getSessionData(String sessionId, String userId) {
 
 **특징:**
 - ✅ API Gateway를 통한 내부 서비스 통신
-- ✅ 타임아웃 및 재시도 정책 적용
-- ✅ 상세한 에러 로깅 및 모니터링
+- ✅ RestTemplate 기반 동기 HTTP 통신
+- ✅ UriComponentsBuilder를 통한 안전한 URL 구성
+- ✅ 상세한 에러 로깅 (403, 404, 5xx 등 상황별 로깅)
 
 ### 3. 다층 분석 엔진
 
@@ -273,6 +278,41 @@ GROUP BY qa.question_id, qa.question_type, qa.major_category, qa.difficulty_leve
 - ✅ 복잡한 집계 쿼리 사전 컴파일
 - ✅ API 응답 속도 대폭 향상
 - ✅ 데이터베이스 부하 감소
+
+### 5. 체계적인 로깅 시스템
+
+**378+ 로깅 포인트로 전체 프로세스 추적:**
+
+```java
+// 6단계 분석 프로세스 로깅 예시
+log.info("┌─ [1단계] 📨 Kafka 이벤트 수신");
+log.info("   ├─ Topic: learning-session-completed");
+log.info("   ├─ SessionId: {}", event.getSessionId());
+log.info("   └─ UserId: {}", event.getUserId());
+
+log.info("┌─ [2단계] 🔗 ProblemService API 호출");
+log.info("   ├─ URL: {}", apiUrl);
+log.info("   └─ Response: 200 OK");
+
+log.info("┌─ [3단계] 🔄 데이터 매핑");
+log.info("   ├─ Session 매핑 완료");
+log.info("   ├─ QuestionAnswers 매핑: {} 개", answers.size());
+log.info("   └─ Events 매핑: {} 개", events.size());
+
+// ... 4, 5, 6단계 로그
+```
+
+**특징:**
+- ✅ 단계별 구조화된 로그 (Emoji + 들여쓰기)
+- ✅ Kafka 메시지 수신부터 이벤트 발행까지 전 과정 추적
+- ✅ API 호출 성공/실패 및 상세 에러 정보
+- ✅ 분석 결과 통계 (정답률, 평균 시간 등)
+- ✅ 트랜잭션 및 DB 저장 상태 모니터링
+
+**로깅 레벨별 활용:**
+- `INFO`: 정상 흐름 추적
+- `WARN`: 경고 상황 (재시도, 지연 등)
+- `ERROR`: 에러 상황 상세 로깅 + 스택 트레이스
 
 ---
 
@@ -495,8 +535,8 @@ docker pull yourusername/learning-service:latest
 - ✅ 백프레셔 관리로 안정적인 처리
 
 ### 4. Database Connection Pool
-- ✅ HikariCP 최적화 설정
-- ✅ Connection Pool 모니터링
+- ✅ HikariCP 기본 설정 활용
+- ✅ Spring Boot Auto-Configuration 기반 최적화
 
 ---
 
@@ -531,30 +571,45 @@ docker pull yourusername/learning-service:latest
 ## 📊 프로젝트 통계
 
 - **코드 라인 수**: ~8,000+ lines
+- **로깅 포인트**: 378+ (13개 파일)
 - **API 엔드포인트**: 15+
 - **Database Tables**: 5
 - **Database Views**: 4
-- **Kafka Topics**: 2
+- **Kafka Topics**: 2 (구독 1, 발행 1)
 - **Docker Images**: 1
 
 ---
 
 ## 📝 향후 계획
 
-### Phase 1: 고도화
+### Phase 1: 모니터링 & 관측성 강화
+- [ ] **Prometheus** - 메트릭 수집 및 시계열 데이터 저장
+- [ ] **Grafana** - 실시간 모니터링 대시보드
+  - Kafka Consumer Lag 모니터링
+  - API 응답 시간 추적
+  - JVM 메모리 및 GC 메트릭
+- [ ] **ELK Stack** - 중앙 집중식 로그 관리
+  - Logstash: 로그 수집 및 파싱
+  - Elasticsearch: 로그 저장 및 검색
+  - Kibana: 로그 시각화 및 분석
+- [ ] **APM (Application Performance Monitoring)** 도구 도입
+
+### Phase 2: 기능 고도화
 - [ ] 실시간 학습 추천 알고리즘 개선
 - [ ] 머신러닝 기반 취약점 예측
 - [ ] WebSocket 기반 실시간 대시보드
+- [ ] A/B 테스팅 프레임워크 구축
 
-### Phase 2: 확장성
-- [ ] Kubernetes 기반 배포
-- [ ] Prometheus + Grafana 모니터링
-- [ ] ELK Stack 로그 분석
+### Phase 3: 확장성 & 안정성
+- [ ] Kubernetes 기반 배포 및 오토스케일링
+- [ ] Circuit Breaker 패턴 적용 (Resilience4j)
+- [ ] 분산 트레이싱 (Zipkin/Jaeger)
+- [ ] Blue-Green 배포 전략
 
-### Phase 3: 기능 추가
+### Phase 4: 추가 기능
 - [ ] 학습 그룹 비교 분석
 - [ ] 학습 목표 설정 및 추적
-- [ ] 게임화 요소 추가 (배지, 레벨업)
+- [ ] 게임화 요소 추가 (배지, 레벨업, 리더보드)
 
 ---
 
